@@ -1,5 +1,5 @@
 // server/index.js
-// Express + SQLite (better-sqlite3) + JWT auth API for Glass Keep
+// Express + SQLite (better-sqlite3) + JWT auth API for Indigo Notes
 
 const path = require("path");
 const fs = require("fs");
@@ -921,7 +921,7 @@ app.get("/api/notes/archived", auth, (req, res) => {
 app.get("/api/notes/export", auth, (req, res) => {
   const rows = listNotes.all(req.user.id);
   res.json({
-    app: "glass-keep",
+    app: "indigo-notes",
     version: 1,
     user: req.user.email,
     exportedAt: nowISO(),
@@ -1254,7 +1254,7 @@ app.post("/api/ai/ask", auth, async (req, res) => {
       .join('\n\n---\n\n');
 
     const prompt = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are a private assistant for the Glass Keep notes app.
+You are a private assistant for the Indigo Notes app.
 Use ONLY the provided Note Context to answer the user. 
 If the answer is not in the notes, say "I couldn't find any information about that in your notes."
 Be direct, helpful, and concise.

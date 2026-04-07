@@ -1333,7 +1333,7 @@ function AuthShell({ title, dark, onToggleDark, children }) {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold">Glass Keep</h1>
+          <h1 className="text-3xl font-bold">Indigo Notes</h1>
           <p className="text-gray-500 dark:text-gray-400">{title}</p>
         </div>
         <div className="glass-card rounded-xl p-6 shadow-lg">{children}</div>
@@ -2266,12 +2266,12 @@ function NotesUI({
           <img
             src="/favicon-32x32.png"
             srcSet="/pwa-192.png 2x, /pwa-512.png 3x"
-            alt="Glass Keep logo"
+            alt="Indigo Notes logo"
             className="h-7 w-7 rounded-xl shadow-sm select-none pointer-events-none"
             draggable="false"
           />
 
-          <h1 className="hidden sm:block text-2xl sm:text-3xl font-bold">Glass Keep</h1>
+          <h1 className="hidden sm:block text-2xl sm:text-3xl font-bold">Indigo Notes</h1>
           {activeTagFilter && (
             <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 border border-indigo-600/20">
               {tagLabel === "All Images" || tagLabel === "Archived Notes" ? tagLabel : `Tag: ${tagLabel}`}
@@ -3400,7 +3400,7 @@ export default function App() {
       });
       const blob = await zip.generateAsync({ type: "blob" });
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      triggerBlobDownload(`glass-keep-selected-${ts}.zip`, blob);
+      triggerBlobDownload(`indigo-notes-selected-${ts}.zip`, blob);
     } catch (e) {
       alert(e.message || "ZIP download failed");
     }
@@ -3523,7 +3523,7 @@ export default function App() {
   }, [sidebarOpen]);
 
   // Cache keys for localStorage
-  const NOTES_CACHE_KEY = `glass-keep-notes-${currentUser?.id || 'anonymous'}`;
+  const NOTES_CACHE_KEY = `glass-keep-notes-${currentUser?.id || "anonymous"}`;
   const ARCHIVED_NOTES_CACHE_KEY = `glass-keep-archived-${currentUser?.id || 'anonymous'}`;
   const CACHE_TIMESTAMP_KEY = `glass-keep-cache-timestamp-${currentUser?.id || 'anonymous'}`;
 
@@ -4359,7 +4359,7 @@ export default function App() {
       const payload = await api("/notes/export", { token });
       const json = JSON.stringify(payload, null, 2);
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      const fname = sanitizeFilename(`glass-keep-notes-${currentUser?.email || "user"}-${ts}`) + ".json";
+      const fname = sanitizeFilename(`indigo-notes-${currentUser?.email || "user"}-${ts}`) + ".json";
       triggerJSONDownload(fname, json);
     } catch (e) {
       alert(e.message || "Export failed");
@@ -4670,9 +4670,9 @@ export default function App() {
       const data = await api("/secret-key", { method: "POST", token });
       if (!data?.key) throw new Error("Secret key not returned by server.");
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      const fname = `glass-keep-secret-key-${ts}.txt`;
+      const fname = `indigo-notes-secret-key-${ts}.txt`;
       const content =
-        `Glass Keep — Secret Recovery Key\n\n` +
+        `Indigo Notes — Secret Recovery Key\n\n` +
         `Keep this key safe. Anyone with this key can sign in as you.\n\n` +
         `Secret Key:\n${data.key}\n\n` +
         `Instructions:\n` +
