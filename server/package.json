@@ -1,5 +1,5 @@
 {
-  "name": "glass-keep-api",
+  "name": "indigo-notes-api",
   "private": true,
   "type": "commonjs",
   "main": "index.js"

@@ -21,9 +21,9 @@ export default defineConfig({
         "robots.txt"
       ],
       manifest: {
-        name: "Glass Keep",
-        short_name: "GlassKeep",
-        description: "A lightweight notes app with Markdown, images, and offline support.",
+        name: "Indigo Notes",
+        short_name: "IndigoNotes",
+        description: "A private notes app with Markdown, images, and offline support.",
         theme_color: "#4f46e5",
         background_color: "#ffffff",
         display: "standalone",
