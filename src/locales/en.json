@@ -5,6 +5,8 @@
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",
+    "copy": "Copy",
+    "copied": "Copied",
     "search": "Search",
     "confirm": "Confirm",
     "close": "Close",
@@ -55,7 +57,10 @@
     "language": "Language",
     "languageDesc": "Choose your preferred language",
     "english": "English",
-    "spanish": "Spanish"
+    "spanish": "Spanish",
+    "languageModalTitle": "Choose language",
+    "languageModalDesc": "Select the app language. Changes apply instantly.",
+    "languageChanged": "Language changed to {{language}}"
   },
   "admin": {
     "title": "Admin Panel",
@@ -277,6 +282,7 @@
     "failedAddNote": "Failed to add note",
     "failedArchiveNote": "Failed to archive note",
     "failedUpdateAdminSettings": "Failed to update admin settings",
+    "failedUpdateUser": "Failed to update user",
     "failedCreateUser": "Failed to create user",
     "failedDeleteUser": "Failed to delete user",
     "exportFailed": "Export failed",
@@ -299,6 +305,7 @@
     "failedTogglePin": "Failed to toggle pin",
     "bulkDeleteFailed": "Bulk delete failed",
     "zipDownloadFailed": "ZIP download failed",
+    "serverResponded": "Server responded with {{status}}",
     "failedLoadUsers": "Failed to load users",
     "failedLoadAdminData": "Failed to load admin data",
     "aiLoginRequired": "You must be logged in to use the AI Assistant."

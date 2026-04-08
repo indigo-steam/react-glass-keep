@@ -5,6 +5,8 @@
     "delete": "Eliminar",
     "edit": "Editar",
     "add": "Agregar",
+    "copy": "Copiar",
+    "copied": "Copiado",
     "search": "Buscar",
     "confirm": "Confirmar",
     "close": "Cerrar",
@@ -55,7 +57,10 @@
     "language": "Idioma",
     "languageDesc": "Elige tu idioma preferido",
     "english": "Inglés",
-    "spanish": "Español"
+    "spanish": "Español",
+    "languageModalTitle": "Elegir idioma",
+    "languageModalDesc": "Selecciona el idioma de la app. Los cambios se aplican al instante.",
+    "languageChanged": "Idioma cambiado a {{language}}"
   },
   "admin": {
     "title": "Panel de Administración",
@@ -277,6 +282,7 @@
     "failedAddNote": "No se pudo agregar la nota",
     "failedArchiveNote": "No se pudo archivar la nota",
     "failedUpdateAdminSettings": "No se pudo actualizar la configuración de administrador",
+    "failedUpdateUser": "No se pudo actualizar el usuario",
     "failedCreateUser": "No se pudo crear el usuario",
     "failedDeleteUser": "No se pudo eliminar el usuario",
     "exportFailed": "Error al exportar",
@@ -299,6 +305,7 @@
     "failedTogglePin": "No se pudo fijar/desfijar la nota",
     "bulkDeleteFailed": "No se pudo eliminar la selección",
     "zipDownloadFailed": "No se pudo descargar el ZIP",
+    "serverResponded": "El servidor respondió con {{status}}",
     "failedLoadUsers": "No se pudieron cargar los usuarios",
     "failedLoadAdminData": "No se pudieron cargar los datos de administración",
     "aiLoginRequired": "Debes iniciar sesión para usar el asistente de IA."

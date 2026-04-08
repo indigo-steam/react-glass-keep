@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const DRAWING_COLORS = [
   '#000000', // black
@@ -19,6 +20,7 @@ const DRAWING_COLORS = [
 const PEN_SIZES = [1, 2, 4, 8, 12, 16, 24, 32];
 
 function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = false, darkMode = false, hideModeToggle = false, initialMode = null }) {
+  const { t } = useTranslation();
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tool, setTool] = useState('pen'); // 'pen' or 'eraser'
@@ -302,9 +304,9 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
           <button
             onClick={() => setMode(mode === 'view' ? 'draw' : 'view')}
             className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm"
-            title={mode === 'view' ? 'Switch to Draw mode' : 'Switch to View mode'}
+            title={mode === 'view' ? t('drawing.switchToDraw') : t('drawing.switchToView')}
           >
-            {mode === 'view' ? 'Draw mode' : 'View mode'}
+            {mode === 'view' ? t('drawing.drawMode') : t('drawing.viewMode')}
           </button>
         </div>
       )}
@@ -317,14 +319,14 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
             <button
               onClick={() => setTool('pen')}
               className={`px-2 py-1 rounded text-sm ${tool === 'pen' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
-              title="Pen"
+              title={t('drawing.pen')}
             >
               ✏️
             </button>
             <button
               onClick={() => setTool('eraser')}
               className={`px-2 py-1 rounded text-sm ${tool === 'eraser' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
-              title="Eraser"
+              title={t('drawing.eraser')}
             >
               🧽
             </button>
@@ -336,7 +338,7 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
               <button
                 onClick={() => setShowColorPicker(!showColorPicker)}
                 className="flex items-center gap-1 px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600"
-                title="Change color"
+                title={t('drawing.changeColor')}
               >
                 <div
                   className="w-4 h-4 rounded border border-gray-400"
@@ -368,10 +370,11 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
 
           {/* Size picker */}
           <select
+            name="drawing-brush-size"
             value={size}
             onChange={(e) => setSize(Number(e.target.value))}
             className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm"
-            title="Brush size"
+            title={t('drawing.brushSize')}
           >
             {PEN_SIZES.map(s => (
               <option key={s} value={s}>{s}px</option>
@@ -384,14 +387,14 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
               onClick={undo}
               disabled={paths.length === 0}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm disabled:opacity-50 hover:bg-gray-300 dark:hover:bg-gray-600"
-              title="Undo"
+              title={t('drawing.undo')}
             >
               ↶
             </button>
             <button
               onClick={clearCanvas}
               className="px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-              title="Clear all"
+              title={t('drawing.clearAll')}
             >
               🗑️
             </button>
@@ -448,18 +451,18 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
           <button
             onClick={addPage}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium transition-colors"
-            title="Double the canvas size to add more space for notes"
+            title={t('drawing.addPageTitle')}
           >
-            Add Page
+            {t('drawing.addPage')}
           </button>
         </div>
       )}
 
       {/* Info */}
       <div className="text-xs text-gray-500 mt-2">
-        {paths.length} stroke{paths.length !== 1 ? 's' : ''}
-        {mode === 'view' && ' (view mode)'}
-        {readOnly && mode === 'draw' && ' (read-only)'}
+        {paths.length} {paths.length !== 1 ? t('drawing.strokes') : t('drawing.stroke')}
+        {mode === 'view' && ` ${t('drawing.viewModeHint')}`}
+        {readOnly && mode === 'draw' && ` ${t('drawing.readOnlyHint')}`}
       </div>
     </div>
   );

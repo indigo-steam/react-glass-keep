@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
+import i18nCore from "./i18n";
 import { askAI } from "./ai";
 import { marked as markedParser } from "marked";
 import DrawingCanvas from "./DrawingCanvas";
@@ -60,7 +62,7 @@ async function api(path, { method = "GET", body, token } = {}) {
       // Dispatch a custom event so the app can handle it
       window.dispatchEvent(new CustomEvent('auth-expired'));
 
-      const err = new Error(data?.error || "Session expired. Please log in again.");
+      const err = new Error(data?.error || i18nCore.t("errors.sessionExpired"));
       err.status = res.status;
       err.isAuthError = true;
       throw err;
@@ -75,7 +77,7 @@ async function api(path, { method = "GET", body, token } = {}) {
   } catch (error) {
     // Handle network errors, timeouts, etc.
     if (error.name === 'AbortError') {
-      const err = new Error("Request timeout. Please check your connection.");
+      const err = new Error(i18nCore.t("errors.requestTimeout"));
       err.status = 408;
       err.isNetworkError = true;
       throw err;
@@ -88,7 +90,7 @@ async function api(path, { method = "GET", body, token } = {}) {
 
     // Handle fetch failures (network errors, CORS, etc.)
     if (error instanceof TypeError && error.message.includes('fetch')) {
-      const err = new Error("Network error. Please check your connection.");
+      const err = new Error(i18nCore.t("errors.networkError"));
       err.status = 0;
       err.isNetworkError = true;
       throw err;
@@ -428,10 +430,10 @@ async function ensureJSZip() {
     s.src = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
     s.async = true;
     s.onload = resolve;
-    s.onerror = () => reject(new Error("Failed to load JSZip."));
+    s.onerror = () => reject(new Error(i18nCore.t("errors.zipDownloadFailed")));
     document.head.appendChild(s);
   });
-  if (!window.JSZip) throw new Error("JSZip not available");
+  if (!window.JSZip) throw new Error(i18nCore.t("errors.zipDownloadFailed"));
   return window.JSZip;
 }
 
@@ -691,6 +693,7 @@ function ChecklistRow({
   showRemove = false,
   size = "md", // "sm" | "md" | "lg"
 }) {
+  const { t } = useTranslation();
   const boxSize =
     size === "lg"
       ? "h-7 w-7 md:h-6 md:w-6"
@@ -713,6 +716,7 @@ function ChecklistRow({
     <div className="flex items-start gap-3 md:gap-2 group">
       <input
         type="checkbox"
+        name="checklist-item-done"
         className={`mt-0.5 ${boxSize} cursor-pointer`}
         checked={!!item.done}
         onChange={(e) => {
@@ -730,17 +734,18 @@ function ChecklistRow({
         </span>
       ) : (
         <input
+          name="checklist-item-text"
           className={`flex-1 bg-transparent text-sm focus:outline-none border-b border-transparent focus:border-[var(--border-light)] pb-0.5 ${item.done ? "line-through text-gray-500 dark:text-gray-400" : ""}`}
           value={item.text}
           onChange={(e) => onChange?.(e.target.value)}
-          placeholder="List item"
+          placeholder={t('placeholder.listItem')}
         />
       )}
 
       {(showRemove || !readOnly) && (
         <button
           className={`${removeVisibility} transition-opacity text-gray-500 hover:text-red-600 rounded-full border border-[var(--border-light)] flex items-center justify-center ${removeSize}`}
-          title="Remove item"
+          title={t('modal.removeItem')}
           onClick={onRemove}
         >
           ×
@@ -905,24 +910,25 @@ function handleSmartEnter(value, start, end) {
 
 /** Small toolbar UI */
 function FormatToolbar({ dark, onAction }) {
+  const { t } = useTranslation();
   const base = `fmt-btn ${dark ? "hover:bg-white/10" : "hover:bg-black/5"}`;
   return (
     <div className={`fmt-pop ${dark ? "bg-gray-800 text-gray-100" : "bg-white text-gray-800"}`}>
       <div className="flex flex-wrap gap-1">
-        <button className={base} onClick={() => onAction("h1")}>H1</button>
-        <button className={base} onClick={() => onAction("h2")}>H2</button>
-        <button className={base} onClick={() => onAction("h3")}>H3</button>
+        <button className={base} title={t('format.h1')} onClick={() => onAction("h1")}>H1</button>
+        <button className={base} title={t('format.h2')} onClick={() => onAction("h2")}>H2</button>
+        <button className={base} title={t('format.h3')} onClick={() => onAction("h3")}>H3</button>
         <span className="mx-1 opacity-40">|</span>
-        <button className={base} onClick={() => onAction("bold")}><strong>B</strong></button>
-        <button className={base} onClick={() => onAction("italic")}><em>I</em></button>
-        <button className={base} onClick={() => onAction("strike")}><span className="line-through">S</span></button>
-        <button className={base} onClick={() => onAction("code")}>`code`</button>
-        <button className={base} onClick={() => onAction("codeblock")}>&lt;/&gt;</button>
+        <button className={base} title={t('format.bold')} onClick={() => onAction("bold")}><strong>B</strong></button>
+        <button className={base} title={t('format.italic')} onClick={() => onAction("italic")}><em>I</em></button>
+        <button className={base} title={t('format.strike')} onClick={() => onAction("strike")}><span className="line-through">S</span></button>
+        <button className={base} title={t('format.code')} onClick={() => onAction("code")}>`code`</button>
+        <button className={base} title={t('format.codeblock')} onClick={() => onAction("codeblock")}>&lt;/&gt;</button>
         <span className="mx-1 opacity-40">|</span>
-        <button className={base} onClick={() => onAction("quote")}>&gt;</button>
-        <button className={base} onClick={() => onAction("ul")}>• list</button>
-        <button className={base} onClick={() => onAction("ol")}>1. list</button>
-        <button className={base} onClick={() => onAction("link")}>🔗</button>
+        <button className={base} title={t('format.quote')} onClick={() => onAction("quote")}>&gt;</button>
+        <button className={base} title={t('format.ul')} onClick={() => onAction("ul")}>•</button>
+        <button className={base} title={t('format.ol')} onClick={() => onAction("ol")}>1.</button>
+        <button className={base} title={t('format.link')} onClick={() => onAction("link")}>🔗</button>
       </div>
     </div>
   );
@@ -1157,6 +1163,7 @@ function NoteCard({
   onUpdateChecklistItem,
   currentUser,
 }) {
+  const { t } = useTranslation();
 
   const isChecklist = n.type === "checklist";
   const isDraw = n.type === "draw";
@@ -1236,7 +1243,7 @@ function NoteCard({
         <div className="absolute bottom-3 right-3 z-10">
           <div
             className="relative"
-            title="Collaborated note"
+            title={t('collab.collaboratedNote')}
           >
             <svg className="w-5 h-5 text-black dark:text-white" fill="currentColor" viewBox="0 0 20 20">
               <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z" />
@@ -1254,10 +1261,10 @@ function NoteCard({
             style={{ backgroundColor: bgFor(n.color, dark) }}
           />
           <button
-            aria-label={n.pinned ? "Unpin note" : "Pin note"}
+            aria-label={n.pinned ? t('notes.unpin') : t('notes.pin')}
             onClick={(e) => { if (disablePin) return; e.stopPropagation(); togglePin(n.id, !n.pinned); }}
             className="relative rounded-full p-2 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            title={n.pinned ? "Unpin" : "Pin"}
+            title={n.pinned ? t('notes.unpin') : t('notes.pin')}
             disabled={!!disablePin}
           >
             {n.pinned ? <PinFilled /> : <PinOutline />}
@@ -1269,10 +1276,10 @@ function NoteCard({
 
       {mainImg && (
         <div className="mb-3 relative overflow-hidden rounded-lg border border-[var(--border-light)]">
-          <img src={mainImg.src} alt={mainImg.name || "note image"} className="w-full h-40 object-cover" />
+          <img src={mainImg.src} alt={mainImg.name || t('notes.noteImage')} className="w-full h-40 object-cover" />
           {imgs.length > 1 && (
             <span className="absolute bottom-2 right-2 text-xs bg-black/60 text-white px-2 py-0.5 rounded-full">
-              +{imgs.length - 1} more
+              {t('notes.moreImages', { count: imgs.length - 1 })}
             </span>
           )}
         </div>
@@ -1300,9 +1307,9 @@ function NoteCard({
             />
           ))}
           {extraCount > 0 && (
-            <div className="text-xs text-gray-600 dark:text-gray-300">+{extraCount} more…</div>
+            <div className="text-xs text-gray-600 dark:text-gray-300">{t('notes.moreItems', { count: extraCount })}</div>
           )}
-          <div className="text-xs text-gray-600 dark:text-gray-300">{done}/{total} completed</div>
+          <div className="text-xs text-gray-600 dark:text-gray-300">{t('notes.completed', { done, total })}</div>
         </div>
       )}
 
@@ -1328,12 +1335,12 @@ function NoteCard({
 }
 
 /** ---------- Auth Shell ---------- */
-function AuthShell({ title, dark, onToggleDark, children }) {
+function AuthShell({ title, dark, onToggleDark, children, t }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold">Indigo Notes</h1>
+          <h1 className="text-3xl font-bold">{t('app.name')}</h1>
           <p className="text-gray-500 dark:text-gray-400">{title}</p>
         </div>
         <div className="glass-card rounded-xl p-6 shadow-lg">{children}</div>
@@ -1341,9 +1348,9 @@ function AuthShell({ title, dark, onToggleDark, children }) {
           <button
             onClick={onToggleDark}
             className={`inline-flex items-center gap-2 text-sm ${dark ? "text-gray-300" : "text-gray-700"} hover:underline`}
-            title="Toggle dark mode"
+            title={t('theme.toggleMode')}
           >
-            {dark ? <Moon /> : <Sun />} Toggle theme
+            {dark ? <Moon /> : <Sun />} {t('theme.toggleMode')}
           </button>
         </div>
       </div>
@@ -1352,7 +1359,7 @@ function AuthShell({ title, dark, onToggleDark, children }) {
 }
 
 /** ---------- Login / Register / Secret Login ---------- */
-function LoginView({ dark, onToggleDark, onLogin, goRegister, goSecret, allowRegistration }) {
+function LoginView({ dark, onToggleDark, onLogin, goRegister, goSecret, allowRegistration, t }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -1361,53 +1368,55 @@ function LoginView({ dark, onToggleDark, onLogin, goRegister, goSecret, allowReg
     e.preventDefault();
     try {
       const res = await onLogin(email.trim(), pw);
-      if (!res.ok) setErr(res.error || "Login failed");
+      if (!res.ok) setErr(res.error || t('auth.loginFailed'));
     } catch (er) {
-      setErr(er.message || "Login failed");
+      setErr(er.message || t('auth.loginFailed'));
     }
   };
 
   return (
-    <AuthShell title="Sign in to your account" dark={dark} onToggleDark={onToggleDark}>
+    <AuthShell title={t('auth.signIn')} dark={dark} onToggleDark={onToggleDark} t={t}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="text"
+          name="login-username"
           autoComplete="username"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Username"
+          placeholder={t('auth.username')}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
         />
         <input
           type="password"
+          name="login-password"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Password"
+          placeholder={t('auth.password')}
           value={pw}
           onChange={(e) => setPw(e.target.value)}
           required
         />
         {err && <p className="text-red-600 text-sm">{err}</p>}
         <button type="submit" className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-          Sign In
+          {t('auth.signInButton')}
         </button>
       </form>
 
       <div className="mt-4 text-sm flex justify-between items-center">
         {allowRegistration && (
           <button className="text-indigo-600 hover:underline" onClick={goRegister}>
-            Create account
+            {t('auth.createAccount')}
           </button>
         )}
         <button className="text-indigo-600 hover:underline" onClick={goSecret}>
-          Forgot username/password?
+          {t('auth.signInSecret')}
         </button>
       </div>
     </AuthShell>
   );
 }
 
-function RegisterView({ dark, onToggleDark, onRegister, goLogin }) {
+function RegisterView({ dark, onToggleDark, onRegister, goLogin, t }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -1416,67 +1425,71 @@ function RegisterView({ dark, onToggleDark, onRegister, goLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (pw.length < 6) return setErr("Password must be at least 6 characters.");
-    if (pw !== pw2) return setErr("Passwords do not match.");
+    if (pw.length < 6) return setErr(t('auth.passwordMinLength'));
+    if (pw !== pw2) return setErr(t('auth.passwordMismatch'));
     try {
       const res = await onRegister(name.trim() || "User", email.trim(), pw);
-      if (!res.ok) setErr(res.error || "Registration failed");
+      if (!res.ok) setErr(res.error || t('auth.registerFailed'));
     } catch (er) {
-      setErr(er.message || "Registration failed");
+      setErr(er.message || t('auth.registerFailed'));
     }
   };
 
   return (
-    <AuthShell title="Create a new account" dark={dark} onToggleDark={onToggleDark}>
+    <AuthShell title={t('auth.createAccount')} dark={dark} onToggleDark={onToggleDark} t={t}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="text"
+          name="register-name"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Name"
+          placeholder={t('admin.name')}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
           type="text"
+          name="register-username"
           autoComplete="username"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Username"
+          placeholder={t('auth.username')}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
         />
         <input
           type="password"
+          name="register-password"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Password (min 6 chars)"
+          placeholder={t('auth.passwordMinHint')}
           value={pw}
           onChange={(e) => setPw(e.target.value)}
           required
         />
         <input
           type="password"
+          name="register-password-confirm"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Confirm password"
+          placeholder={t('auth.confirmPassword')}
           value={pw2}
           onChange={(e) => setPw2(e.target.value)}
           required
         />
         {err && <p className="text-red-600 text-sm">{err}</p>}
         <button type="submit" className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-          Create Account
+          {t('auth.registerButton')}
         </button>
       </form>
       <div className="mt-4 text-sm text-center">
-        Already have an account?{" "}
+        {t('auth.hasAccount')}{" "}
         <button className="text-indigo-600 hover:underline" onClick={goLogin}>
-          Sign in
+          {t('auth.signIn')}
         </button>
       </div>
     </AuthShell>
   );
 }
 
-function SecretLoginView({ dark, onToggleDark, onLoginWithKey, goLogin }) {
+function SecretLoginView({ dark, onToggleDark, onLoginWithKey, goLogin, t }) {
   const [key, setKey] = useState("");
   const [err, setErr] = useState("");
 
@@ -1484,31 +1497,32 @@ function SecretLoginView({ dark, onToggleDark, onLoginWithKey, goLogin }) {
     e.preventDefault();
     try {
       const res = await onLoginWithKey(key.trim());
-      if (!res.ok) setErr(res.error || "Login failed");
+      if (!res.ok) setErr(res.error || t('auth.loginFailed'));
     } catch (er) {
-      setErr(er.message || "Login failed");
+      setErr(er.message || t('auth.loginFailed'));
     }
   };
 
   return (
-    <AuthShell title="Sign in with Secret Key" dark={dark} onToggleDark={onToggleDark}>
+    <AuthShell title={t('auth.signInWithSecret')} dark={dark} onToggleDark={onToggleDark} t={t}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <textarea
+          name="secret-login-key"
           className="w-full bg-transparent border border-[var(--border-light)] rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px] text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-          placeholder="Paste your secret key here"
+          placeholder={t('auth.secretKeyPlaceholder')}
           value={key}
           onChange={(e) => setKey(e.target.value)}
           required
         />
         {err && <p className="text-red-600 text-sm">{err}</p>}
         <button type="submit" className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-          Sign In with Secret Key
+          {t('auth.signInButton')}
         </button>
       </form>
       <div className="mt-4 text-sm text-center">
-        Remember your credentials?{" "}
+        {t('auth.hasAccount')}{" "}
         <button className="text-indigo-600 hover:underline" onClick={goLogin}>
-          Sign in with email & password
+          {t('auth.signIn')}
         </button>
       </div>
     </AuthShell>
@@ -1516,7 +1530,7 @@ function SecretLoginView({ dark, onToggleDark, onLoginWithKey, goLogin }) {
 }
 
 /** ---------- Tag Sidebar / Drawer ---------- */
-function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, permanent = false, width = 288, onResize }) {
+function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, permanent = false, width = 288, onResize, t }) {
   const isAllNotes = activeTag === null;
   const isAllImages = activeTag === ALL_IMAGES;
 
@@ -1538,12 +1552,12 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
         aria-hidden={!(permanent || open)}
       >
         <div className="p-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Tags</h3>
+          <h3 className="text-lg font-semibold">{t('sidebar.title')}</h3>
           {!permanent && (
             <button
               className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/10"
               onClick={onClose}
-              title="Close"
+              title={t('sidebar.close')}
             >
               <CloseIcon />
             </button>
@@ -1555,7 +1569,7 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
             className={`w-full text-left px-3 py-2 rounded-md mb-1 ${isAllNotes ? (dark ? "bg-white/10" : "bg-black/5") : (dark ? "hover:bg-white/10" : "hover:bg-black/5")}`}
             onClick={() => { onSelect(null); onClose(); }}
           >
-            Notes (All)
+            {t('sidebar.allNotes')}
           </button>
 
           {/* All Images */}
@@ -1563,7 +1577,7 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
             className={`w-full text-left px-3 py-2 rounded-md mb-2 ${isAllImages ? (dark ? "bg-white/10" : "bg-black/5") : (dark ? "hover:bg-white/10" : "hover:bg-black/5")}`}
             onClick={() => { onSelect(ALL_IMAGES); onClose(); }}
           >
-            All Images
+            {t('notes.allImages')}
           </button>
 
           {/* Archived Notes */}
@@ -1571,7 +1585,7 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
             className={`w-full text-left px-3 py-2 rounded-md mb-2 ${activeTag === 'ARCHIVED' ? (dark ? "bg-white/10" : "bg-black/5") : (dark ? "hover:bg-white/10" : "hover:bg-black/5")}`}
             onClick={() => { onSelect('ARCHIVED'); onClose(); }}
           >
-            Archived Notes
+            {t('notes.archived')}
           </button>
 
           {/* User tags */}
@@ -1591,7 +1605,7 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
             );
           })}
           {tagsWithCounts.length === 0 && (
-            <p className="text-sm text-gray-500 mt-2">No tags yet. Add tags to your notes!</p>
+            <p className="text-sm text-gray-500 mt-2">{t('sidebar.addTagsHint')}</p>
           )}
         </nav>
 
@@ -1629,10 +1643,22 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
 }
 
 /** ---------- Settings Panel ---------- */
-function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, showGenericConfirm, showToast }) {
+function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, showGenericConfirm, showToast, i18n, t }) {
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
+  const currentLanguage = (i18n?.resolvedLanguage || i18n?.language || 'en').split('-')[0];
+
+  const setLanguage = (language) => {
+    if (!i18n) return;
+    i18n.changeLanguage(language);
+    localStorage.setItem('indigo-notes-language', language);
+    const nextT = i18n.getFixedT(language);
+    const languageName = nextT(language === 'es' ? 'settings.spanish' : 'settings.english');
+    showToast?.(nextT('settings.languageChanged', { language: languageName }), 'success');
+    setLanguageModalOpen(false);
+  };
   // Prevent body scroll when settings panel is open
   React.useEffect(() => {
-    if (open) {
+    if (open || languageModalOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -1641,6 +1667,10 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
     return () => {
       document.body.style.overflow = '';
     };
+  }, [open, languageModalOpen]);
+
+  React.useEffect(() => {
+    if (!open) setLanguageModalOpen(false);
   }, [open]);
 
   return (
@@ -1659,12 +1689,12 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
         <div className="p-4 flex items-center justify-between border-b border-[var(--border-light)]">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <SettingsIcon />
-            Settings
+            {t('settings.title')}
           </h3>
           <button
             className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/10"
             onClick={onClose}
-            title="Close"
+            title={t('common.close')}
           >
             <CloseIcon />
           </button>
@@ -1673,58 +1703,58 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
         <div className="p-4 overflow-y-auto h-[calc(100%-64px)]">
           {/* Data Management Section */}
           <div className="mb-8">
-            <h4 className="text-md font-semibold mb-4">Data Management</h4>
+            <h4 className="text-md font-semibold mb-4">{t('settings.dataManagement')}</h4>
             <div className="space-y-3">
               <button
                 className={`block w-full text-left px-4 py-3 border border-[var(--border-light)] rounded-lg ${dark ? "hover:bg-white/10" : "hover:bg-gray-50"} transition-colors`}
                 onClick={() => { onClose(); onExportAll?.(); }}
               >
-                <div className="font-medium">Export ALL notes (.json)</div>
-                <div className="text-sm text-gray-500">Download all notes as JSON file</div>
+                <div className="font-medium">{t('settings.exportAll')}</div>
+                <div className="text-sm text-gray-500">{t('settings.exportAllDesc')}</div>
               </button>
 
               <button
                 className={`block w-full text-left px-4 py-3 border border-[var(--border-light)] rounded-lg ${dark ? "hover:bg-white/10" : "hover:bg-gray-50"} transition-colors`}
                 onClick={() => { onClose(); onImportAll?.(); }}
               >
-                <div className="font-medium">Import notes (.json)</div>
-                <div className="text-sm text-gray-500">Import notes from JSON file</div>
+                <div className="font-medium">{t('settings.importNotes')}</div>
+                <div className="text-sm text-gray-500">{t('settings.importNotesDesc')}</div>
               </button>
 
               <button
                 className={`block w-full text-left px-4 py-3 border border-[var(--border-light)] rounded-lg ${dark ? "hover:bg-white/10" : "hover:bg-gray-50"} transition-colors`}
                 onClick={() => { onClose(); onImportGKeep?.(); }}
               >
-                <div className="font-medium">Import Google Keep notes (.json)</div>
-                <div className="text-sm text-gray-500">Import notes from Google Keep JSON export</div>
+                <div className="font-medium">{t('settings.importGKeep')}</div>
+                <div className="text-sm text-gray-500">{t('settings.importGKeepDesc')}</div>
               </button>
 
               <button
                 className={`block w-full text-left px-4 py-3 border border-[var(--border-light)] rounded-lg ${dark ? "hover:bg-white/10" : "hover:bg-gray-50"} transition-colors`}
                 onClick={() => { onClose(); onImportMd?.(); }}
               >
-                <div className="font-medium">Import Markdown files (.md)</div>
-                <div className="text-sm text-gray-500">Import notes from Markdown files</div>
+                <div className="font-medium">{t('settings.importMd')}</div>
+                <div className="text-sm text-gray-500">{t('settings.importMdDesc')}</div>
               </button>
 
               <button
                 className={`block w-full text-left px-4 py-3 border border-[var(--border-light)] rounded-lg ${dark ? "hover:bg-white/10" : "hover:bg-gray-50"} transition-colors`}
                 onClick={() => { onClose(); onDownloadSecretKey?.(); }}
               >
-                <div className="font-medium">Download secret key (.txt)</div>
-                <div className="text-sm text-gray-500">Download your encryption key for backup</div>
+                <div className="font-medium">{t('settings.downloadKey')}</div>
+                <div className="text-sm text-gray-500">{t('settings.downloadKeyDesc')}</div>
               </button>
             </div>
           </div>
 
           {/* UI Preferences Section */}
           <div className="mb-8">
-            <h4 className="text-md font-semibold mb-4">UI Preferences</h4>
+            <h4 className="text-md font-semibold mb-4">{t('settings.uiPreferences')}</h4>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium">Local AI Assistant</div>
-                  <div className="text-sm text-gray-500">Ask questions about your notes (server-side model)</div>
+                  <div className="font-medium">{t('settings.localAi')}</div>
+                  <div className="text-sm text-gray-500">{t('settings.localAiDesc')}</div>
                 </div>
                 <button
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localAiEnabled
@@ -1733,22 +1763,20 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
                     }`}
                   onClick={() => {
                     if (!localAiEnabled) {
-                      // Show confirmation dialog when enabling
                       showGenericConfirm({
-                        title: "Enable AI Assistant?",
-                        message: "This will download a ~700MB AI model (Llama-3.2-1B) to the server and may use significant CPU resources. The download will happen in the background. Continue?",
-                        confirmText: "Enable AI",
-                        cancelText: "Cancel",
+                        title: t('confirm.enableAi'),
+                        message: t('confirm.enableAiMessage'),
+                        confirmText: t('common.confirm'),
+                        cancelText: t('common.cancel'),
                         danger: false,
                         onConfirm: async () => {
                           setLocalAiEnabled(true);
-                          showToast("AI Assistant enabled. Model will download on first use.", "success");
+                          showToast(t('toast.aiEnabled'), "success");
                         }
                       });
                     } else {
-                      // Disable without confirmation
                       setLocalAiEnabled(false);
-                      showToast("AI Assistant disabled", "info");
+                      showToast(t('toast.aiDisabled'), "info");
                     }
                   }}
                 >
@@ -1761,8 +1789,8 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
 
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium">Always show sidebar on wide screens</div>
-                  <div className="text-sm text-gray-500">Keep tags panel visible on screens wider than 700px</div>
+                  <div className="font-medium">{t('settings.alwaysShowSidebar')}</div>
+                  <div className="text-sm text-gray-500">{t('settings.alwaysShowSidebarDesc')}</div>
                 </div>
                 <button
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${alwaysShowSidebarOnWide
@@ -1777,16 +1805,77 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
                   />
                 </button>
               </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{t('settings.language')}</div>
+                  <div className="text-sm text-gray-500">{t('settings.languageDesc')}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLanguageModalOpen(true)}
+                  className={`px-3 py-1.5 rounded-lg border text-sm min-w-[110px] text-left ${dark ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+                >
+                  {currentLanguage === 'es' ? t('settings.spanish') : t('settings.english')}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {open && languageModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setLanguageModalOpen(false)} />
+          <div
+            className={`relative w-full max-w-sm rounded-xl border border-[var(--border-light)] p-5 shadow-2xl ${dark ? 'bg-[#222222] text-gray-100' : 'bg-white text-gray-900'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="text-lg font-semibold">{t('settings.languageModalTitle')}</h4>
+            <p className="mt-1 text-sm text-gray-500">{t('settings.languageModalDesc')}</p>
+
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => setLanguage('en')}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-lg border transition-colors ${currentLanguage === 'en'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : (dark ? 'border-gray-600 hover:bg-white/10' : 'border-gray-300 hover:bg-gray-50')}`}
+              >
+                <span>{t('settings.english')}</span>
+                {currentLanguage === 'en' && <span aria-hidden="true">✓</span>}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLanguage('es')}
+                className={`w-full flex items-center justify-between px-4 py-2 rounded-lg border transition-colors ${currentLanguage === 'es'
+                  ? 'border-indigo-500 bg-indigo-500/10'
+                  : (dark ? 'border-gray-600 hover:bg-white/10' : 'border-gray-300 hover:bg-gray-50')}`}
+              >
+                <span>{t('settings.spanish')}</span>
+                {currentLanguage === 'es' && <span aria-hidden="true">✓</span>}
+              </button>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => setLanguageModalOpen(false)}
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
 /** ---------- Admin Panel ---------- */
-function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm, setNewUserForm, updateAdminSettings, createUser, deleteUser, updateUser, currentUser, showGenericConfirm, showToast }) {
+function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm, setNewUserForm, updateAdminSettings, createUser, deleteUser, updateUser, currentUser, showGenericConfirm, showToast, t }) {
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editUserModalOpen, setEditUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -1798,14 +1887,14 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!newUserForm.name || !newUserForm.email || !newUserForm.password) {
-      showToast("Please fill in all required fields", "error");
+      showToast(t('admin.fillRequired'), "error");
       return;
     }
 
     setIsCreatingUser(true);
     try {
       await createUser(newUserForm);
-      showToast("User created successfully!", "success");
+      showToast(t('admin.userCreated'), "success");
     } catch (e) {
       // Error already handled in createUser function
     } finally {
@@ -1827,7 +1916,7 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     if (!editUserForm.name || !editUserForm.email) {
-      showToast("Name and email are required", "error");
+      showToast(t('admin.nameEmailRequired'), "error");
       return;
     }
 
@@ -1844,11 +1933,11 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
       }
 
       await updateUser(editingUser.id, updateData);
-      showToast("User updated successfully!", "success");
+      showToast(t('admin.userUpdated'), "success");
       setEditUserModalOpen(false);
       setEditingUser(null);
     } catch (e) {
-      showToast(e.message || "Failed to update user", "error");
+      showToast(e.message || t('errors.failedUpdateUser'), "error");
     } finally {
       setIsUpdatingUser(false);
     }
@@ -1889,11 +1978,11 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
         aria-hidden={!open}
       >
         <div className="p-4 flex items-center justify-between border-b border-[var(--border-light)]">
-          <h3 className="text-lg font-semibold">Admin Panel</h3>
+          <h3 className="text-lg font-semibold">{t('adminView.title')}</h3>
           <button
             className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/10"
             onClick={onClose}
-            title="Close"
+            title={t('common.close')}
           >
             <CloseIcon />
           </button>
@@ -1902,10 +1991,10 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
         <div className="p-4 overflow-y-auto h-[calc(100%-64px)]">
           {/* Settings Section */}
           <div className="mb-8">
-            <h4 className="text-md font-semibold mb-4">Settings</h4>
+            <h4 className="text-md font-semibold mb-4">{t('admin.settings')}</h4>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm">Allow New Account Creation</span>
+                <span className="text-sm">{t('admin.allowNewAccounts')}</span>
                 <button
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${adminSettings.allowNewAccounts
                     ? 'bg-indigo-600'
@@ -1924,25 +2013,28 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
 
           {/* Create User Section */}
           <div className="mb-8">
-            <h4 className="text-md font-semibold mb-4">Create New User</h4>
+            <h4 className="text-md font-semibold mb-4">{t('admin.createUser')}</h4>
             <form onSubmit={handleCreateUser} className="space-y-3">
               <input
                 type="text"
-                placeholder="Name"
+                name="admin-new-name"
+                placeholder={t('admin.name')}
                 value={newUserForm.name}
                 onChange={(e) => setNewUserForm(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
               />
               <input
                 type="text"
-                placeholder="Username"
+                name="admin-new-email"
+                placeholder={t('admin.emailUsername')}
                 value={newUserForm.email}
                 onChange={(e) => setNewUserForm(prev => ({ ...prev, email: e.target.value }))}
                 className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
               />
               <input
                 type="password"
-                placeholder="Password"
+                name="admin-new-password"
+                placeholder={t('admin.password')}
                 value={newUserForm.password}
                 onChange={(e) => setNewUserForm(prev => ({ ...prev, password: e.target.value }))}
                 className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
@@ -1951,25 +2043,26 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
                 <input
                   type="checkbox"
                   id="is_admin"
+                  name="admin-new-is-admin"
                   checked={newUserForm.is_admin}
                   onChange={(e) => setNewUserForm(prev => ({ ...prev, is_admin: e.target.checked }))}
                   className="mr-2"
                 />
-                <label htmlFor="is_admin" className="text-sm">Make admin</label>
+                <label htmlFor="is_admin" className="text-sm">{t('admin.isAdmin')}</label>
               </div>
               <button
                 type="submit"
                 disabled={isCreatingUser}
                 className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
               >
-                {isCreatingUser ? "Creating..." : "Create User"}
+                {isCreatingUser ? t('common.loading') : t('admin.createUser')}
               </button>
             </form>
           </div>
 
           {/* Users List Section */}
           <div>
-            <h4 className="text-md font-semibold mb-4">All Users ({allUsers.length})</h4>
+            <h4 className="text-md font-semibold mb-4">{t('adminView.users')} ({allUsers.length})</h4>
             <div className="space-y-3">
               {allUsers.map((user) => (
                 <div key={user.id} className="p-3 border border-[var(--border-light)] rounded-lg">
@@ -1981,37 +2074,37 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
                     <div className="flex items-center gap-2">
                       {user.is_admin && (
                         <span className="px-2 py-1 text-xs bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200 rounded">
-                          Admin
+                          {t('admin.isAdmin')}
                         </span>
                       )}
                       <button
                         onClick={() => openEditUserModal(user)}
                         className="px-2 py-1 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded hover:bg-blue-200 dark:hover:bg-blue-800"
                       >
-                        Edit
+                        {t('common.edit')}
                       </button>
                       {user.id !== currentUser?.id && (
                         <button
                           onClick={() => {
                             showGenericConfirm({
-                              title: "Delete User",
-                              message: `Are you sure you want to delete ${user.name}?`,
-                              confirmText: "Delete",
+                              title: t('admin.deleteUser'),
+                              message: t('admin.deleteConfirm'),
+                              confirmText: t('common.delete'),
                               danger: true,
                               onConfirm: () => deleteUser(user.id)
                             });
                           }}
                           className="px-2 py-1 text-xs bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 rounded hover:bg-red-200 dark:hover:bg-red-800"
                         >
-                          Delete
+                          {t('common.delete')}
                         </button>
                       )}
                     </div>
                   </div>
                   <div className="text-xs text-gray-500 space-y-1">
-                    <div>Notes: {user.notes}</div>
-                    <div>Storage: {formatBytes(user.storage_bytes ?? 0)}</div>
-                    <div>Joined: {new Date(user.created_at).toLocaleDateString()}</div>
+                    <div>{t('notes.allNotes')}: {user.notes}</div>
+                    <div>{t('admin.storage')}: {formatBytes(user.storage_bytes ?? 0)}</div>
+                    <div>{t('admin.createdAt')}: {new Date(user.created_at).toLocaleDateString()}</div>
                   </div>
                 </div>
               ))}
@@ -2024,12 +2117,13 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
       {editUserModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold mb-4">Edit User</h3>
+            <h3 className="text-lg font-semibold mb-4">{t('admin.editUser')}</h3>
             <form onSubmit={handleUpdateUser} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Name</label>
+                <label className="block text-sm font-medium mb-1">{t('admin.name')}</label>
                 <input
                   type="text"
+                  name="admin-edit-name"
                   value={editUserForm.name}
                   onChange={(e) => setEditUserForm(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
@@ -2037,9 +2131,10 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Username</label>
+                <label className="block text-sm font-medium mb-1">{t('admin.emailUsername')}</label>
                 <input
                   type="text"
+                  name="admin-edit-email"
                   value={editUserForm.email}
                   onChange={(e) => setEditUserForm(prev => ({ ...prev, email: e.target.value }))}
                   className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
@@ -2047,24 +2142,26 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Password (leave empty to keep current)</label>
+                <label className="block text-sm font-medium mb-1">{t('admin.leaveEmptyPassword')}</label>
                 <input
                   type="password"
+                  name="admin-edit-password"
                   value={editUserForm.password}
                   onChange={(e) => setEditUserForm(prev => ({ ...prev, password: e.target.value }))}
                   className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
-                  placeholder="Leave empty to keep current password"
+                  placeholder={t('admin.leaveEmptyPassword')}
                 />
               </div>
               <div className="flex items-center">
                 <input
                   type="checkbox"
                   id="edit_is_admin"
+                  name="admin-edit-is-admin"
                   checked={editUserForm.is_admin}
                   onChange={(e) => setEditUserForm(prev => ({ ...prev, is_admin: e.target.checked }))}
                   className="mr-2"
                 />
-                <label htmlFor="edit_is_admin" className="text-sm">Make admin</label>
+                <label htmlFor="edit_is_admin" className="text-sm">{t('admin.isAdmin')}</label>
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <button
@@ -2072,14 +2169,14 @@ function AdminPanel({ open, onClose, dark, adminSettings, allUsers, newUserForm,
                   onClick={() => setEditUserModalOpen(false)}
                   className="px-4 py-2 border border-[var(--border-light)] rounded-lg hover:bg-black/5 dark:hover:bg-white/10"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={isUpdatingUser}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {isUpdatingUser ? "Updating..." : "Update User"}
+                  {isUpdatingUser ? t('common.loading') : t('admin.editUser')}
                 </button>
               </div>
             </form>
@@ -2157,14 +2254,14 @@ function NotesUI({
   // Settings panel
   openSettingsPanel,
   // AI props
-  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch
+  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, t
 }) {
   // Multi-select color popover (local UI state)
   const multiColorBtnRef = useRef(null);
   const [showMultiColorPop, setShowMultiColorPop] = useState(false);
   const tagLabel =
-    activeTagFilter === ALL_IMAGES ? "All Images" :
-      activeTagFilter === 'ARCHIVED' ? "Archived Notes" :
+    activeTagFilter === ALL_IMAGES ? t('notes.allImages') :
+      activeTagFilter === 'ARCHIVED' ? t('notes.archived') :
         activeTagFilter;
 
   // Close header menu when scrolling
@@ -2192,19 +2289,19 @@ function NotesUI({
         <div className="p-3 sm:p-4 flex items-center justify-between sticky top-0 z-[25] glass-card mb-2" style={{ position: "sticky" }}>
           <div className="flex items-center gap-2 flex-wrap">
             <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm" onClick={onBulkDownloadZip}>
-              Download (.zip)
+              {t('multi.downloadZip')}
             </button>
             <button className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm" onClick={onBulkDelete}>
-              Delete
+              {t('common.delete')}
             </button>
             <button
               ref={multiColorBtnRef}
               type="button"
               onClick={() => setShowMultiColorPop((v) => !v)}
               className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm"
-              title="Color"
+              title={t('multi.color')}
             >
-              🎨 Color
+              🎨 {t('multi.color')}
             </button>
             <Popover anchorRef={multiColorBtnRef} open={showMultiColorPop} onClose={() => setShowMultiColorPop(false)}>
               <div className={`fmt-pop ${dark ? "bg-gray-800 text-gray-100" : "bg-white text-gray-800"}`}>
@@ -2228,18 +2325,18 @@ function NotesUI({
             {activeTagFilter !== 'ARCHIVED' && (
               <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm flex items-center gap-1" onClick={() => onBulkPin(true)}>
                 <PinIcon />
-                Pin
+                {t('notes.pin')}
               </button>
             )}
             <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm flex items-center gap-1" onClick={onBulkArchive}>
               <ArchiveIcon />
-              {activeTagFilter === 'ARCHIVED' ? 'Unarchive' : 'Archive'}
+              {activeTagFilter === 'ARCHIVED' ? t('notes.unarchive') : t('notes.archive')}
             </button>
-            <span className="text-xs opacity-70 ml-2">Selected: {selectedIds.length}</span>
+            <span className="text-xs opacity-70 ml-2">{t('multi.selected', { count: selectedIds.length })}</span>
           </div>
           <button
             className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-            title="Exit multi-select"
+            title={t('multi.exit')}
             onClick={onExitMulti}
           >
             <CloseIcon />
@@ -2255,8 +2352,8 @@ function NotesUI({
             <button
               onClick={openSidebar}
               className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              title="Open tags"
-              aria-label="Open tags"
+              title={t('sidebar.openTags')}
+              aria-label={t('sidebar.openTags')}
             >
               <Hamburger />
             </button>
@@ -2266,22 +2363,22 @@ function NotesUI({
           <img
             src="/favicon-32x32.png"
             srcSet="/pwa-192.png 2x, /pwa-512.png 3x"
-            alt="Indigo Notes logo"
+            alt={t('app.logoAlt')}
             className="h-7 w-7 rounded-xl shadow-sm select-none pointer-events-none"
             draggable="false"
           />
 
-          <h1 className="hidden sm:block text-2xl sm:text-3xl font-bold">Indigo Notes</h1>
+          <h1 className="hidden sm:block text-2xl sm:text-3xl font-bold">{t('app.name')}</h1>
           {activeTagFilter && (
             <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 border border-indigo-600/20">
-              {tagLabel === "All Images" || tagLabel === "Archived Notes" ? tagLabel : `Tag: ${tagLabel}`}
+              {activeTagFilter === ALL_IMAGES || activeTagFilter === 'ARCHIVED' ? tagLabel : t('notes.tagLabel', { tag: tagLabel })}
             </span>
           )}
 
           {/* Offline indicator */}
           {!isOnline && (
             <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-orange-600/10 text-orange-700 dark:text-orange-300 border border-orange-600/20">
-              Offline
+              {t('app.offlineBadge')}
             </span>
           )}
         </div>
@@ -2290,7 +2387,8 @@ function NotesUI({
           <div className="relative w-full max-w-lg">
             <input
               type="text"
-              placeholder={localAiEnabled ? "Search or Ask AI..." : "Search..."}
+              name="notes-search"
+              placeholder={localAiEnabled ? t('notes.searchAiPlaceholder') : t('notes.searchPlaceholder')}
               className={`w-full bg-transparent border border-[var(--border-light)] rounded-lg pl-4 ${localAiEnabled ? 'pr-14' : 'pr-8'} py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -2304,7 +2402,7 @@ function NotesUI({
               {localAiEnabled && search.trim().length > 0 && (
                 <button
                   type="button"
-                  title="Ask AI"
+                  title={t('ai.ask')}
                   className="h-7 w-7 rounded-full flex items-center justify-center text-indigo-600 hover:bg-indigo-600/10 transition-colors"
                   onClick={() => onAiSearch?.(search)}
                 >
@@ -2314,7 +2412,7 @@ function NotesUI({
               {search && (
                 <button
                   type="button"
-                  aria-label="Clear search"
+                  aria-label={t('search.clear')}
                   className="h-6 w-6 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
                   onClick={() => setSearch("")}
                 >
@@ -2327,7 +2425,7 @@ function NotesUI({
 
         <div className="relative flex items-center gap-3">
           <span className={`text-sm hidden sm:inline ${dark ? "text-gray-100" : "text-gray-900"}`}>
-            {currentUser?.name ? `Hi, ${currentUser.name}` : currentUser?.email}
+            {currentUser?.name ? t('app.greeting', { name: currentUser.name }) : currentUser?.email}
           </span>
 
           {/* Header 3-dot menu */}
@@ -2335,7 +2433,7 @@ function NotesUI({
             ref={headerBtnRef}
             onClick={() => setHeaderMenuOpen((v) => !v)}
             className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800"
-            title="Menu"
+            title={t('menu.open')}
             aria-haspopup="menu"
             aria-expanded={headerMenuOpen}
           >
@@ -2361,14 +2459,14 @@ function NotesUI({
                   onClick={() => { setHeaderMenuOpen(false); openSettingsPanel?.(); }}
                 >
                   <SettingsIcon />
-                  Settings
+                  {t('common.settings')}
                 </button>
                 <button
                   className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                   onClick={() => { setHeaderMenuOpen(false); onToggleViewMode?.(); }}
                 >
                   {listView ? <GridIcon /> : <ListIcon />}
-                  {listView ? "Grid View" : "List View"}
+                  {listView ? t('view.gridView') : t('view.listView')}
                 </button>
                 {/* Theme toggle text item */}
                 <button
@@ -2376,14 +2474,14 @@ function NotesUI({
                   onClick={() => { setHeaderMenuOpen(false); toggleDark?.(); }}
                 >
                   {dark ? <SunIcon /> : <MoonIcon />}
-                  {dark ? "Light Mode" : "Dark Mode"}
+                  {dark ? t('theme.lightMode') : t('theme.darkMode')}
                 </button>
                 <button
                   className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                   onClick={() => { setHeaderMenuOpen(false); onStartMulti?.(); }}
                 >
                   <CheckSquareIcon />
-                  Multi select
+                  {t('view.multiSelect')}
                 </button>
                 {currentUser?.is_admin && (
                   <button
@@ -2391,7 +2489,7 @@ function NotesUI({
                     onClick={() => { setHeaderMenuOpen(false); openAdminPanel?.(); }}
                   >
                     <ShieldIcon />
-                    Admin Panel
+                    {t('admin.title')}
                   </button>
                 )}
                 <button
@@ -2399,7 +2497,7 @@ function NotesUI({
                   onClick={() => { setHeaderMenuOpen(false); signOut?.(); }}
                 >
                   <LogOutIcon />
-                  Sign out
+                  {t('menu.signOut')}
                 </button>
               </div>
             </>
@@ -2409,6 +2507,7 @@ function NotesUI({
           <input
             ref={importFileRef}
             type="file"
+            name="import-json"
             accept="application/json"
             className="hidden"
             onChange={async (e) => {
@@ -2422,6 +2521,7 @@ function NotesUI({
           <input
             ref={gkeepFileRef}
             type="file"
+            name="import-google-keep-json"
             accept="application/json"
             multiple
             className="hidden"
@@ -2436,6 +2536,7 @@ function NotesUI({
           <input
             ref={mdFileRef}
             type="file"
+            name="import-markdown"
             accept=".md,text/markdown"
             multiple
             className="hidden"
@@ -2460,12 +2561,12 @@ function NotesUI({
             )}
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="text-indigo-600 dark:text-indigo-400" />
-              <h3 className="font-semibold text-indigo-700 dark:text-indigo-300">AI Assistant</h3>
+              <h3 className="font-semibold text-indigo-700 dark:text-indigo-300">{t('ai.assistant')}</h3>
               {aiResponse && !isAiLoading && (
                 <button
                   onClick={() => { setAiResponse(null); setSearch(''); }}
                   className="ml-auto p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
-                  title="Clear response"
+                  title={t('ai.clearResponse')}
                 >
                   <CloseIcon />
                 </button>
@@ -2475,7 +2576,7 @@ function NotesUI({
               {isAiLoading ? (
                 <p className="animate-pulse text-gray-500 italic flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" />
-                  AI Assistant is thinking...
+                  {t('ai.thinking')}
                 </p>
               ) : (
                 <div
@@ -2498,8 +2599,8 @@ function NotesUI({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold mb-2">You're offline</h3>
-              <p className="text-gray-600 dark:text-gray-400">Please go back online to add notes.</p>
+              <h3 className="text-lg font-semibold mb-2">{t('app.offlineTitle')}</h3>
+              <p className="text-gray-600 dark:text-gray-400">{t('app.offlineDescription')}</p>
             </div>
           ) : (
             <div
@@ -2509,6 +2610,7 @@ function NotesUI({
               {/* Collapsed single input */}
               {composerCollapsed ? (
                 <input
+                  name="composer-collapsed-content"
                   value={content}
                   onChange={(e) => { }}
                   onFocus={() => {
@@ -2516,7 +2618,7 @@ function NotesUI({
                     setComposerCollapsed(false);
                     setTimeout(() => titleRef.current?.focus(), 10);
                   }}
-                  placeholder="Write a note..."
+                  placeholder={t('placeholder.writeNote')}
                   className="w-full bg-transparent placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none p-2"
                 />
               ) : (
@@ -2524,9 +2626,10 @@ function NotesUI({
                   {/* Title */}
                   <input
                     ref={titleRef}
+                    name="composer-title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Title"
+                    placeholder={t('placeholder.title')}
                     disabled={!isOnline}
                     className={`w-full bg-transparent text-lg font-semibold placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none mb-2 p-2 ${!isOnline ? 'opacity-50 cursor-not-allowed' : ''
                       }`}
@@ -2536,10 +2639,11 @@ function NotesUI({
                   {composerType === "text" ? (
                     <textarea
                       ref={contentRef}
+                      name="composer-content"
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                       onKeyDown={onComposerKeyDown}
-                      placeholder="Write a note..."
+                      placeholder={t('placeholder.writeNote')}
                       disabled={!isOnline}
                       className={`w-full bg-transparent placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none resize-none p-2 ${!isOnline ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
@@ -2549,10 +2653,11 @@ function NotesUI({
                     <div className="space-y-3">
                       <div className="flex gap-2">
                         <input
+                          name="composer-checklist-item"
                           value={clInput}
                           onChange={(e) => setClInput(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addComposerItem(); } }}
-                          placeholder="List item…"
+                          placeholder={t('placeholder.listItem')}
                           disabled={!isOnline}
                           className={`flex-1 bg-transparent placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none p-2 border-b border-[var(--border-light)] ${!isOnline ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
@@ -2565,7 +2670,7 @@ function NotesUI({
                             : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                             }`}
                         >
-                          Add
+                          {t('composer.addItem')}
                         </button>
                       </div>
                       {clItems.length > 0 && (
@@ -2595,7 +2700,7 @@ function NotesUI({
                         <div key={im.id} className="relative">
                           <img src={im.src} alt={im.name} className="h-16 w-24 object-cover rounded-md border border-[var(--border-light)]" />
                           <button
-                            title="Remove image"
+                            title={t('modal.removeImage')}
                             className="absolute -top-2 -right-2 bg-black/70 text-white rounded-full w-5 h-5 text-xs"
                             onClick={() => setComposerImages((prev) => prev.filter((x) => x.id !== im.id))}
                           >
@@ -2609,10 +2714,11 @@ function NotesUI({
                   {/* Responsive composer footer */}
                   <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:gap-3 gap-3 relative">
                     <input
+                      name="composer-tags"
                       value={tags}
                       onChange={(e) => setTags(e.target.value)}
                       type="text"
-                      placeholder="Add tags (comma-separated)"
+                      placeholder={t('notes.addTags')}
                       disabled={!isOnline}
                       className={`w-full sm:flex-1 bg-transparent text-sm placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none p-2 ${!isOnline ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
@@ -2627,9 +2733,9 @@ function NotesUI({
                             type="button"
                             onClick={() => setShowComposerFmt((v) => !v)}
                             className="px-2 py-1 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 flex items-center gap-2 text-sm"
-                            title="Formatting"
+                            title={t('composer.formatting')}
                           >
-                            <FormatIcon /> Formatting
+                            <FormatIcon /> {t('composer.formatting')}
                           </button>
                           <Popover
                             anchorRef={composerFmtBtnRef}
@@ -2650,7 +2756,7 @@ function NotesUI({
                             ? 'bg-indigo-600 text-white border-indigo-600'
                             : 'border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10'
                             }`}
-                          title="Text note"
+                          title={t('composer.textNote')}
                         >
                           📝
                         </button>
@@ -2661,7 +2767,7 @@ function NotesUI({
                             ? 'bg-indigo-600 text-white border-indigo-600'
                             : 'border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10'
                             }`}
-                          title="Checklist"
+                          title={t('composer.checklist')}
                         >
                           ✅
                         </button>
@@ -2672,7 +2778,7 @@ function NotesUI({
                             ? 'bg-indigo-600 text-white border-indigo-600'
                             : 'border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10'
                             }`}
-                          title="Drawing"
+                          title={t('composer.drawing')}
                         >
                           🖌️
                         </button>
@@ -2684,7 +2790,7 @@ function NotesUI({
                         type="button"
                         onClick={() => setShowColorPop((v) => !v)}
                         className="w-6 h-6 rounded-full border-2 border-[var(--border-light)] hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800 flex items-center justify-center"
-                        title="Color"
+                        title={t('multi.color')}
                         style={{
                           backgroundColor: composerColor === "default" ? "transparent" : solid(bgFor(composerColor, dark)),
                           borderColor: composerColor === "default" ? "#d1d5db" : solid(bgFor(composerColor, dark)),
@@ -2722,6 +2828,7 @@ function NotesUI({
                       <input
                         ref={composerFileRef}
                         type="file"
+                        name="composer-images"
                         accept="image/*"
                         multiple
                         className="hidden"
@@ -2741,7 +2848,7 @@ function NotesUI({
                       <button
                         onClick={() => composerFileRef.current?.click()}
                         className="px-2 py-1 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 flex-shrink-0 text-lg"
-                        title="Add images"
+                        title={t('upload.addImages')}
                       >
                         🖼️
                       </button>
@@ -2755,7 +2862,7 @@ function NotesUI({
                           : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                           }`}
                       >
-                        Add Note
+                        {t('notes.addNote')}
                       </button>
                     </div>
                   </div>
@@ -2774,12 +2881,12 @@ function NotesUI({
               {listView ? (
                 <div className="max-w-2xl mx-auto">
                   <h2 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3 ml-1">
-                    Pinned
+                    {t('composer.pinned')}
                   </h2>
                 </div>
               ) : (
                 <h2 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3 ml-1">
-                  Pinned
+                  {t('composer.pinned')}
                 </h2>
               )}
               <div className={listView ? "max-w-2xl mx-auto space-y-6" : "masonry-grid"}>
@@ -2816,12 +2923,12 @@ function NotesUI({
                 listView ? (
                   <div className="max-w-2xl mx-auto">
                     <h2 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3 ml-1">
-                      Others
+                      {t('composer.others')}
                     </h2>
                   </div>
                 ) : (
                   <h2 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3 ml-1">
-                    Others
+                    {t('composer.others')}
                   </h2>
                 )
               )}
@@ -2855,21 +2962,21 @@ function NotesUI({
         {
           notesLoading && (pinned.length + others.length === 0) && (
             <p className="text-center text-gray-500 dark:text-gray-400 mt-10">
-              Loading Notes…
+              {t('app.loadingNotes')}
             </p>
           )
         }
         {
           !notesLoading && filteredEmptyWithSearch && (
             <p className="text-center text-gray-500 dark:text-gray-400 mt-10">
-              No matching notes found.
+              {t('app.noMatchingNotes')}
             </p>
           )
         }
         {
           !notesLoading && allEmpty && (
             <p className="text-center text-gray-500 dark:text-gray-400 mt-10">
-              No notes yet. Add one to get started!
+              {t('notes.noNotes')}
             </p>
           )
         }
@@ -2880,6 +2987,7 @@ function NotesUI({
 
 /** ---------- AdminView ---------- */
 function AdminView({ dark }) {
+  const { t } = useTranslation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const sess = getAuth();
@@ -2900,10 +3008,10 @@ function AdminView({ dark }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to load users");
+      if (!res.ok) throw new Error(data?.error || t('errors.failedLoadUsers'));
       setUsers(Array.isArray(data) ? data : []);
     } catch (e) {
-      alert(e.message || "Failed to load admin data");
+      alert(e.message || t('errors.failedLoadAdminData'));
       setUsers([]);
     } finally {
       setLoading(false);
@@ -2917,10 +3025,10 @@ function AdminView({ dark }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Delete failed");
+      if (!res.ok) throw new Error(data?.error || t('errors.deleteFailed'));
       setUsers((prev) => prev.filter((u) => u.id !== id));
     } catch (e) {
-      alert(e.message || "Delete failed");
+      alert(e.message || t('errors.deleteFailed'));
     }
   }
 
@@ -2929,39 +3037,39 @@ function AdminView({ dark }) {
   return (
     <div className="min-h-screen px-4 sm:px-6 md:px-8 lg:px-12 py-8">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-4">Admin</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold mb-4">{t('adminView.title')}</h1>
         <p className="mb-6 text-sm text-gray-600 dark:text-gray-300">
-          Manage registered users. You can remove users (this also deletes their notes).
+          {t('adminView.description')}
         </p>
 
         <div className="glass-card rounded-xl p-4 shadow-lg overflow-x-auto">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-lg">Users</h2>
+            <h2 className="font-semibold text-lg">{t('adminView.users')}</h2>
             <button
               onClick={load}
               className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm"
             >
-              {loading ? "Refreshing…" : "Refresh"}
+              {loading ? t('adminView.refreshing') : t('adminView.refresh')}
             </button>
           </div>
 
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b border-[var(--border-light)]">
-                <th className="py-2 pr-3">Name</th>
-                <th className="py-2 pr-3">Email / Username</th>
-                <th className="py-2 pr-3">Notes</th>
-                <th className="py-2 pr-3">Storage</th>
-                <th className="py-2 pr-3">Admin</th>
-                <th className="py-2 pr-3">Created</th>
-                <th className="py-2 pr-3">Actions</th>
+                <th className="py-2 pr-3">{t('admin.name')}</th>
+                <th className="py-2 pr-3">{t('admin.emailUsername')}</th>
+                <th className="py-2 pr-3">{t('notes.allNotes')}</th>
+                <th className="py-2 pr-3">{t('admin.storage')}</th>
+                <th className="py-2 pr-3">{t('admin.isAdmin')}</th>
+                <th className="py-2 pr-3">{t('admin.createdAt')}</th>
+                <th className="py-2 pr-3">{t('adminView.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 && !loading && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-gray-500 dark:text-gray-400">
-                    No users found.
+                    {t('adminView.noUsersFound')}
                   </td>
                 </tr>
               )}
@@ -2978,7 +3086,7 @@ function AdminView({ dark }) {
                         : "bg-gray-500/10 text-gray-700 dark:text-gray-300 border border-gray-500/20"
                         }`}
                     >
-                      {u.is_admin ? "Yes" : "No"}
+                      {u.is_admin ? t('adminView.yes') : t('adminView.no')}
                     </span>
                   </td>
                   <td className="py-2 pr-3">
@@ -2988,17 +3096,12 @@ function AdminView({ dark }) {
                     <button
                       className="px-2.5 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700"
                       onClick={() => {
-                        showGenericConfirm({
-                          title: "Delete User",
-                          message: "Delete this user and ALL their notes? This cannot be undone.",
-                          confirmText: "Delete",
-                          danger: true,
-                          onConfirm: () => removeUser(u.id)
-                        });
+                        const confirmed = window.confirm(t('admin.deleteConfirm'));
+                        if (confirmed) removeUser(u.id);
                       }}
-                      title="Delete user"
+                      title={t('admin.deleteUser')}
                     >
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </td>
                 </tr>
@@ -3007,7 +3110,7 @@ function AdminView({ dark }) {
           </table>
 
           {loading && (
-            <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+            <div className="mt-3 text-sm text-gray-500 dark:text-gray-400">{t('common.loading')}</div>
           )}
         </div>
       </div>
@@ -3017,6 +3120,7 @@ function AdminView({ dark }) {
 
 /** ---------- App ---------- */
 export default function App() {
+  const { t, i18n } = useTranslation();
   const [route, setRoute] = useState(window.location.hash || "#/login");
 
   // auth session { token, user }
@@ -3252,9 +3356,10 @@ export default function App() {
   const onBulkDelete = async () => {
     if (!selectedIds.length) return;
     showGenericConfirm({
-      title: "Delete Notes",
-      message: `Delete ${selectedIds.length} selected note(s)? This cannot be undone.`,
-      confirmText: "Delete",
+      title: t('notes.deleteNotes'),
+      message: t('notes.deleteMultipleConfirm', { count: selectedIds.length }),
+      confirmText: t('common.delete'),
+      cancelText: t('common.cancel'),
       danger: true,
       onConfirm: async () => {
         try {
@@ -3265,7 +3370,7 @@ export default function App() {
           setNotes((prev) => prev.filter((n) => !selectedIds.includes(String(n.id))));
           onExitMulti();
         } catch (e) {
-          alert(e.message || "Bulk delete failed");
+          alert(e.message || t('errors.bulkDeleteFailed'));
         }
       }
     });
@@ -3402,7 +3507,7 @@ export default function App() {
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       triggerBlobDownload(`indigo-notes-selected-${ts}.zip`, blob);
     } catch (e) {
-      alert(e.message || "ZIP download failed");
+      alert(e.message || t('errors.zipDownloadFailed'));
     }
   };
 
@@ -3606,7 +3711,7 @@ export default function App() {
       setAiResponse(answer);
     } catch (err) {
       console.error("AI Error:", err);
-      setAiResponse("Sorry, I encountered an error while processing your request.");
+      setAiResponse(t('ai.errorResponse'));
     } finally {
       setIsAiLoading(false);
       setAiLoadingProgress(null);
@@ -4216,7 +4321,7 @@ export default function App() {
       setComposerCollapsed(true);
       if (contentRef.current) contentRef.current.style.height = "auto";
     } catch (e) {
-      alert(e.message || "Failed to add note");
+      alert(e.message || t('errors.failedAddNote'));
     }
   };
 
@@ -4253,7 +4358,7 @@ export default function App() {
         closeModal();
       }
     } catch (e) {
-      alert(e.message || "Failed to archive note");
+      alert(e.message || t('errors.failedArchiveNote'));
     }
   };
 
@@ -4274,7 +4379,7 @@ export default function App() {
       const settings = await api("/admin/settings", { method: "PATCH", token, body: newSettings });
       setAdminSettings(settings);
     } catch (e) {
-      alert(e.message || "Failed to update admin settings");
+      alert(e.message || t('errors.failedUpdateAdminSettings'));
     }
   };
 
@@ -4296,7 +4401,7 @@ export default function App() {
       setNewUserForm({ name: '', email: '', password: '', is_admin: false });
       return newUser;
     } catch (e) {
-      alert(e.message || "Failed to create user");
+      alert(e.message || t('errors.failedCreateUser'));
       throw e;
     }
   };
@@ -4306,7 +4411,7 @@ export default function App() {
       await api(`/admin/users/${userId}`, { method: "DELETE", token });
       setAllUsers(prev => prev.filter(u => u.id !== userId));
     } catch (e) {
-      alert(e.message || "Failed to delete user");
+      alert(e.message || t('errors.failedDeleteUser'));
     }
   };
 
@@ -4362,7 +4467,7 @@ export default function App() {
       const fname = sanitizeFilename(`indigo-notes-${currentUser?.email || "user"}-${ts}`) + ".json";
       triggerJSONDownload(fname, json);
     } catch (e) {
-      alert(e.message || "Export failed");
+      alert(e.message || t('errors.exportFailed'));
     }
   };
 
@@ -4373,12 +4478,12 @@ export default function App() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const notesArr = Array.isArray(parsed?.notes) ? parsed.notes : (Array.isArray(parsed) ? parsed : []);
-      if (!notesArr.length) { alert("No notes found in file."); return; }
+      if (!notesArr.length) { alert(t('errors.noNotesInFile')); return; }
       await api("/notes/import", { method: "POST", token, body: { notes: notesArr } });
       await loadNotes();
-      alert(`Imported ${notesArr.length} note(s) successfully.`);
+      alert(t('errors.importSuccess', { count: notesArr.length }));
     } catch (e) {
-      alert(e.message || "Import failed");
+      alert(e.message || t('toast.importFailed'));
     }
   };
 
@@ -4422,12 +4527,12 @@ export default function App() {
           });
         } catch (e) { }
       }
-      if (!notesArr.length) { alert("No valid Google Keep notes found."); return; }
+      if (!notesArr.length) { alert(t('errors.noValidGoogleKeep')); return; }
       await api("/notes/import", { method: "POST", token, body: { notes: notesArr } });
       await loadNotes();
-      alert(`Imported ${notesArr.length} Google Keep note(s).`);
+      alert(t('errors.importGoogleKeepSuccess', { count: notesArr.length }));
     } catch (e) {
-      alert(e.message || "Google Keep import failed");
+      alert(e.message || t('toast.importFailed'));
     }
   };
 
@@ -4479,15 +4584,15 @@ export default function App() {
       }
 
       if (!notesArr.length) {
-        alert("No valid markdown files found.");
+        alert(t('errors.noValidMarkdown'));
         return;
       }
 
       await api("/notes/import", { method: "POST", token, body: { notes: notesArr } });
       await loadNotes();
-      alert(`Imported ${notesArr.length} markdown file(s) successfully.`);
+      alert(t('errors.importMarkdownSuccess', { count: notesArr.length }));
     } catch (e) {
-      alert(e.message || "Markdown import failed");
+      alert(e.message || t('toast.importFailed'));
     }
   };
 
@@ -4535,7 +4640,7 @@ export default function App() {
         method: "DELETE",
         token
       });
-      showToast("Collaborator removed successfully", "success");
+      showToast(t('errors.collaboratorRemoved'), "success");
       if (collaborationDialogNoteId) {
         loadNoteCollaborators(collaborationDialogNoteId);
       }
@@ -4544,7 +4649,7 @@ export default function App() {
       }
       invalidateNotesCache();
     } catch (e) {
-      showToast(e.message || "Failed to remove collaborator", "error");
+      showToast(e.message || t('errors.failedRemoveCollaborator'), "error");
     }
   };
 
@@ -4650,7 +4755,7 @@ export default function App() {
           : n
       ));
 
-      showToast(`Added ${username} as collaborator successfully!`, "success");
+      showToast(t('errors.collaboratorAdded', { username }), "success");
       setCollaboratorUsername("");
       setShowUserDropdown(false);
       setFilteredUsers([]);
@@ -4660,7 +4765,7 @@ export default function App() {
         loadNoteCollaborators(activeId);
       }
     } catch (e) {
-      showToast(e.message || "Failed to add collaborator", "error");
+      showToast(e.message || t('errors.failedAddCollaborator'), "error");
     }
   };
 
@@ -4668,21 +4773,21 @@ export default function App() {
   const downloadSecretKey = async () => {
     try {
       const data = await api("/secret-key", { method: "POST", token });
-      if (!data?.key) throw new Error("Secret key not returned by server.");
+      if (!data?.key) throw new Error(t('errors.secretKeyMissing'));
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       const fname = `indigo-notes-secret-key-${ts}.txt`;
       const content =
-        `Indigo Notes — Secret Recovery Key\n\n` +
-        `Keep this key safe. Anyone with this key can sign in as you.\n\n` +
-        `Secret Key:\n${data.key}\n\n` +
-        `Instructions:\n` +
-        `1) Go to the login page.\n` +
-        `2) Click "Forgot username/password?".\n` +
-        `3) Choose "Sign in with Secret Key" and paste this key.\n`;
+        `${t('secretKey.fileTitle')}\n\n` +
+        `${t('secretKey.warning')}\n\n` +
+        `${t('secretKey.label')}\n${data.key}\n\n` +
+        `${t('secretKey.instructions')}\n` +
+        `${t('secretKey.step1')}\n` +
+        `${t('secretKey.step2')}\n` +
+        `${t('secretKey.step3')}\n`;
       downloadText(fname, content);
-      alert("Secret key downloaded. Store it in a safe place.");
+      alert(t('errors.secretKeyDownloaded'));
     } catch (e) {
-      alert(e.message || "Could not generate secret key.");
+      alert(e.message || t('errors.secretKeyGenerateFailed'));
     }
   };
 
@@ -5050,7 +5155,7 @@ export default function App() {
       ));
       closeModal();
     } catch (e) {
-      alert(e.message || "Failed to save note");
+      alert(e.message || t('errors.failedSaveNote'));
     } finally {
       setSavingModal(false);
     }
@@ -5061,7 +5166,7 @@ export default function App() {
       // Check if user owns the note
       const note = notes.find(n => String(n.id) === String(activeId));
       if (note && note.user_id !== currentUser?.id) {
-        showToast("You can't delete this note as you don't own it", "error");
+        showToast(t('errors.notOwnerDelete'), "error");
         return;
       }
 
@@ -5070,12 +5175,12 @@ export default function App() {
 
       setNotes((prev) => prev.filter((n) => String(n.id) !== String(activeId)));
       closeModal();
-      showToast("Note deleted successfully", "success");
+      showToast(t('toast.noteDeleted'), "success");
     } catch (e) {
       if (e.status === 404 || e.message?.includes("not found")) {
-        showToast("You can't delete this note as you don't own it", "error");
+        showToast(t('errors.notOwnerDelete'), "error");
       } else {
-        showToast(e.message || "Delete failed", "error");
+        showToast(e.message || t('errors.deleteFailed'), "error");
       }
     }
   };
@@ -5086,7 +5191,7 @@ export default function App() {
 
       setNotes((prev) => prev.map((n) => (String(n.id) === String(id) ? { ...n, pinned: !!toPinned } : n)));
     } catch (e) {
-      alert(e.message || "Failed to toggle pin");
+      alert(e.message || t('errors.failedTogglePin'));
     }
   };
 
@@ -5383,15 +5488,15 @@ export default function App() {
         if (wrapper.querySelector('.code-copy-btn')) return;
         const btn = document.createElement("button");
         btn.className = "code-copy-btn";
-        btn.textContent = "Copy";
+        btn.textContent = t('common.copy');
         btn.setAttribute("data-copy-btn", "1");
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const codeEl = pre.querySelector("code");
           const text = codeEl ? codeEl.textContent : pre.textContent;
           navigator.clipboard?.writeText(text || "");
-          btn.textContent = "Copied";
-          setTimeout(() => (btn.textContent = "Copy"), 1200);
+          btn.textContent = t('common.copied');
+          setTimeout(() => (btn.textContent = t('common.copy')), 1200);
         });
         wrapper.appendChild(btn);
       });
@@ -5407,13 +5512,13 @@ export default function App() {
           return;
         const btn = document.createElement("button");
         btn.className = "inline-code-copy-btn";
-        btn.textContent = "Copy";
+        btn.textContent = t('common.copy');
         btn.setAttribute("data-copy-btn", "1");
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           navigator.clipboard?.writeText(code.textContent || "");
-          btn.textContent = "Copied";
-          setTimeout(() => (btn.textContent = "Copy"), 1200);
+          btn.textContent = t('common.copied');
+          setTimeout(() => (btn.textContent = t('common.copy')), 1200);
         });
         code.insertAdjacentElement("afterend", btn);
       });
@@ -5436,7 +5541,7 @@ export default function App() {
       clearTimeout(t2);
       mo.disconnect();
     };
-  }, [open, viewMode, mType, mBody, activeId]);
+  }, [open, viewMode, mType, mBody, activeId, t]);
 
   /** -------- Modal JSX -------- */
   const modal = open && (
@@ -5474,18 +5579,19 @@ export default function App() {
             >
               <div className="flex flex-wrap items-center gap-2">
                 <input
+                  name="modal-title"
                   className={`flex-[1_0_50%] min-w-[240px] shrink-0 bg-transparent text-2xl font-bold placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none pr-2 ${!isOnline ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   value={mTitle}
                   onChange={(e) => { if (isOnline) setMTitle(e.target.value) }}
-                  placeholder="Title"
+                  placeholder={t('placeholder.title')}
                   disabled={!isOnline}
                 />
                 <div className="flex items-center gap-2 flex-none ml-auto">
                   {/* Collaboration button - always visible */}
                   <button
                     className="rounded-full p-2 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 relative"
-                    title="Collaborate"
+                    title={t('modal.collaborate')}
                     onClick={async () => {
                       setCollaborationModalOpen(true);
                       if (activeId) {
@@ -5507,9 +5613,9 @@ export default function App() {
                     <button
                       className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm"
                       onClick={() => { setViewMode((v) => !v); setShowModalFmt(false); }}
-                      title={viewMode ? "Switch to Edit mode" : "Switch to View mode"}
+                      title={viewMode ? t('modal.switchToEdit') : t('modal.switchToView')}
                     >
-                      {viewMode ? "Edit mode" : "View mode"}
+                      {viewMode ? t('modal.editMode') : t('modal.viewMode')}
                     </button>
                   )}
 
@@ -5518,7 +5624,7 @@ export default function App() {
                       <button
                         ref={modalFmtBtnRef}
                         className="rounded-full p-2.5 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        title="Formatting"
+                        title={t('composer.formatting')}
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowModalFmt((v) => !v);
@@ -5542,7 +5648,7 @@ export default function App() {
                       <button
                         ref={modalMenuBtnRef}
                         className="rounded-full p-2 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        title="More options"
+                        title={t('modal.moreOptions')}
                         onClick={(e) => { e.stopPropagation(); setModalMenuOpen((v) => !v); }}
                       >
                         <Kebab />
@@ -5562,7 +5668,7 @@ export default function App() {
                             onClick={() => { const n = notes.find(nn => String(nn.id) === String(activeId)); if (n) handleDownloadNote(n); setModalMenuOpen(false); }}
                           >
                             <DownloadIcon />
-                            Download .md
+                            {t('modal.downloadMd')}
                           </button>
                           <button
                             className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
@@ -5575,14 +5681,14 @@ export default function App() {
                             }}
                           >
                             <ArchiveIcon />
-                            {activeNoteObj?.archived ? "Unarchive" : "Archive"}
+                            {activeNoteObj?.archived ? t('notes.unarchive') : t('notes.archive')}
                           </button>
                           <button
                             className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm text-red-600 ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                             onClick={() => { setConfirmDeleteOpen(true); setModalMenuOpen(false); }}
                           >
                             <Trash />
-                            Delete
+                            {t('common.delete')}
                           </button>
                         </div>
                       </Popover>
@@ -5593,7 +5699,7 @@ export default function App() {
                   {isOnline && tagFilter !== 'ARCHIVED' && (
                     <button
                       className="rounded-full p-2 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      title="Pin/unpin"
+                      title={t('modal.pinToggle')}
                       onClick={() => activeId != null && togglePin(activeId, !(notes.find((n) => String(n.id) === String(activeId))?.pinned))}
                     >
                       {(notes.find((n) => String(n.id) === String(activeId))?.pinned) ? <PinFilled /> : <PinOutline />}
@@ -5602,7 +5708,7 @@ export default function App() {
 
                   <button
                     className="rounded-full p-2.5 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    title="Close"
+                    title={t('common.close')}
                     onClick={closeModal}
                   >
                     <CloseIcon />
@@ -5626,7 +5732,7 @@ export default function App() {
                       />
                       {isOnline && (
                         <button
-                          title="Remove image"
+                          title={t('modal.removeImage')}
                           className="absolute -top-2 -right-2 bg-black/70 text-white rounded-full w-5 h-5 text-xs"
                           onClick={() => setMImages((prev) => prev.filter((x) => x.id !== im.id))}
                         >
@@ -5650,6 +5756,7 @@ export default function App() {
                   <div className="relative min-h-[160px]">
                     <textarea
                       ref={mBodyRef}
+                      name="modal-content"
                       className={`w-full bg-transparent placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none resize-none overflow-hidden min-h-[160px] ${!isOnline ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                       style={{ scrollBehavior: 'unset' }}
@@ -5696,7 +5803,7 @@ export default function App() {
                           }
                         }
                       }}
-                      placeholder="Write your note…"
+                      placeholder={t('placeholder.writeNote')}
                       disabled={!isOnline}
                     />
                   </div>
@@ -5707,6 +5814,7 @@ export default function App() {
                   {isOnline && (
                     <div className="flex gap-2">
                       <input
+                        name="modal-checklist-item"
                         value={mInput}
                         onChange={(e) => setMInput(e.target.value)}
                         onKeyDown={async (e) => {
@@ -5728,7 +5836,7 @@ export default function App() {
                             }
                           }
                         }}
-                        placeholder="List item…"
+                        placeholder={t('placeholder.listItem')}
                         className="flex-1 bg-transparent placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none p-2 border-b border-[var(--border-light)]"
                       />
                       <button
@@ -5748,7 +5856,7 @@ export default function App() {
                         }}
                         className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
                       >
-                        Add
+                        {t('composer.addItem')}
                       </button>
                     </div>
                   )}
@@ -5882,7 +5990,7 @@ export default function App() {
                       {mItems.filter(it => it.done).length > 0 && (
                         <>
                           <div className="border-t border-[var(--border-light)] pt-4 mt-4">
-                            <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">Done</h4>
+                            <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('modal.done')}</h4>
                             {mItems.filter(it => it.done).map((it) => (
                               <ChecklistRow
                                 key={it.id}
@@ -5931,7 +6039,7 @@ export default function App() {
                         </>
                       )}
                     </div>
-                  ) : <p className="text-sm text-gray-500">No items yet.</p>}
+                  ) : <p className="text-sm text-gray-500">{t('modal.noItemsYet')}</p>}
                 </div>
               ) : (
                 <DrawingCanvas
@@ -5948,7 +6056,7 @@ export default function App() {
               {/* Inline Edited stamp: only when scrollable (appears at very end) */}
               {editedStamp && modalScrollable && (
                 <div className="mt-6 text-xs text-gray-600 dark:text-gray-300 text-right">
-                  Edited: {editedStamp}
+                  {t('modal.edited')}: {editedStamp}
                 </div>
               )}
             </div>
@@ -5956,7 +6064,7 @@ export default function App() {
             {/* Absolute Edited stamp: only when NOT scrollable (sits just above footer) */}
             {editedStamp && !modalScrollable && (
               <div className="absolute bottom-3 right-4 text-xs text-gray-600 dark:text-gray-300 pointer-events-none">
-                Edited: {editedStamp}
+                {t('modal.edited')}: {editedStamp}
               </div>
             )}
           </div>
@@ -5975,7 +6083,7 @@ export default function App() {
                   {isOnline && (
                     <button
                       className="ml-1 opacity-70 hover:opacity-100 focus:outline-none"
-                      title="Remove tag"
+                      title={t('modal.removeTag')}
                       onClick={() => setMTagList((prev) => prev.filter((t) => t !== tag))}
                     >
                       ×
@@ -5986,12 +6094,13 @@ export default function App() {
               {/* Tag input - hidden when offline */}
               {isOnline && (
                 <input
+                  name="modal-tags"
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={handleTagKeyDown}
                   onBlur={handleTagBlur}
                   onPaste={handleTagPaste}
-                  placeholder={mTagList.length ? "Add tag" : "Add tags"}
+                  placeholder={mTagList.length ? t('modal.addTag') : t('modal.addTags')}
                   className="bg-transparent text-sm placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none min-w-[8ch] flex-1"
                 />
               )}
@@ -6002,13 +6111,13 @@ export default function App() {
               {/* Color dropdown (modal) - hidden when offline */}
               {isOnline && (
                 <>
-                  <button
-                    ref={modalColorBtnRef}
-                    type="button"
-                    onClick={() => setShowModalColorPop((v) => !v)}
-                    className="w-6 h-6 rounded-full border-2 border-[var(--border-light)] hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800 flex items-center justify-center"
-                    title="Color"
-                    style={{
+                    <button
+                      ref={modalColorBtnRef}
+                      type="button"
+                      onClick={() => setShowModalColorPop((v) => !v)}
+                      className="w-6 h-6 rounded-full border-2 border-[var(--border-light)] hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800 flex items-center justify-center"
+                      title={t('multi.color')}
+                      style={{
                       backgroundColor: mColor === "default" ? "transparent" : solid(bgFor(mColor, dark)),
                       borderColor: mColor === "default" ? "#d1d5db" : solid(bgFor(mColor, dark)),
                     }}
@@ -6049,6 +6158,7 @@ export default function App() {
                   <input
                     ref={modalFileRef}
                     type="file"
+                    name="modal-images"
                     accept="image/*"
                     multiple
                     className="hidden"
@@ -6057,7 +6167,7 @@ export default function App() {
                   <button
                     onClick={() => modalFileRef.current?.click()}
                     className="px-2 py-1 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-lg"
-                    title="Add images"
+                    title={t('upload.addImages')}
                   >
                     🖼️
                   </button>
@@ -6071,7 +6181,7 @@ export default function App() {
                   disabled={savingModal}
                   className={`px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 whitespace-nowrap ${savingModal ? "bg-indigo-400 text-white cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500"}`}
                 >
-                  {savingModal ? "Saving..." : "Save"}
+                  {savingModal ? t('modal.saving') : t('common.save')}
                 </button>
               )}
               {/* Delete button moved to modal 3-dot menu */}
@@ -6090,22 +6200,22 @@ export default function App() {
                 style={{ backgroundColor: dark ? "rgba(40,40,40,0.95)" : "rgba(255,255,255,0.95)" }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <h3 className="text-lg font-semibold mb-2">Delete this note?</h3>
+                <h3 className="text-lg font-semibold mb-2">{t('confirm.deleteNote')}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  This action cannot be undone.
+                  {t('confirm.deleteNoteMessage')}
                 </p>
                 <div className="mt-5 flex justify-end gap-3">
                   <button
                     className="px-4 py-2 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10"
                     onClick={() => setConfirmDeleteOpen(false)}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                   <button
                     className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                     onClick={async () => { setConfirmDeleteOpen(false); await deleteModal(); }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               </div>
@@ -6138,13 +6248,13 @@ export default function App() {
                   return (
                     <>
                       <h3 className="text-lg font-semibold mb-4">
-                        {isOwner ? "Add Collaborator" : "Collaborators"}
+                        {isOwner ? t('collab.addTitle') : t('collab.listTitle')}
                       </h3>
 
                       {/* Show existing collaborators with remove option */}
                       {addModalCollaborators.length > 0 && (
                         <div className="mb-4">
-                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Current Collaborators:</p>
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('collab.current')}</p>
                           <div className="space-y-2 max-h-48 overflow-y-auto">
                             {addModalCollaborators.map((collab) => {
                               const canRemove = isOwner || collab.id === currentUser?.id;
@@ -6164,9 +6274,9 @@ export default function App() {
                                         await removeCollaborator(collab.id, activeId);
                                       }}
                                       className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                                      title={collab.id === currentUser?.id ? "Remove yourself" : "Remove collaborator"}
+                                      title={collab.id === currentUser?.id ? t('collab.removeYourself') : t('collab.removeCollaborator')}
                                     >
-                                      {collab.id === currentUser?.id ? "Leave" : "Remove"}
+                                      {collab.id === currentUser?.id ? t('collab.leave') : t('collab.remove')}
                                     </button>
                                   )}
                                 </div>
@@ -6180,11 +6290,12 @@ export default function App() {
                       {isOwner && (
                         <>
                           <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                            Enter the username of the person you want to collaborate with on this note.
+                            {t('collab.ownerHelp')}
                           </p>
                           <div ref={collaboratorInputRef} className="relative">
                             <input
                               type="text"
+                              name="collaborator-username"
                               value={collaboratorUsername}
                               onChange={(e) => {
                                 const value = e.target.value;
@@ -6196,7 +6307,7 @@ export default function App() {
                                 updateDropdownPosition();
                                 searchUsers(collaboratorUsername || "");
                               }}
-                              placeholder="Search by username or email"
+                              placeholder={t('placeholder.searchUser')}
                               className="w-full px-3 py-2 border border-[var(--border-light)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-transparent"
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' && collaboratorUsername.trim()) {
@@ -6224,7 +6335,7 @@ export default function App() {
                                 setFilteredUsers([]);
                               }}
                             >
-                              Cancel
+                              {t('common.cancel')}
                             </button>
                             <button
                               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
@@ -6234,7 +6345,7 @@ export default function App() {
                                 }
                               }}
                             >
-                              Add Collaborator
+                              {t('collab.add')}
                             </button>
                           </div>
                         </>
@@ -6252,7 +6363,7 @@ export default function App() {
                               setFilteredUsers([]);
                             }}
                           >
-                            Close
+                            {t('common.close')}
                           </button>
                         </div>
                       )}
@@ -6276,7 +6387,7 @@ export default function App() {
             >
               {loadingUsers ? (
                 <div className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400">
-                  Searching...
+                  {t('collab.searching')}
                 </div>
               ) : (
                 filteredUsers.map((user) => (
@@ -6316,7 +6427,7 @@ export default function App() {
           <div className="absolute top-4 right-4 flex items-center gap-2">
             <button
               className="px-3 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20"
-              title="Download (D)"
+              title={t('imageViewer.download')}
               onClick={async (e) => {
                 e.stopPropagation();
                 const im = mImages[imgViewIndex];
@@ -6330,7 +6441,7 @@ export default function App() {
             </button>
             <button
               className="px-3 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20"
-              title="Close (Esc)"
+              title={t('imageViewer.close')}
               onClick={(e) => { e.stopPropagation(); closeImageViewer(); }}
             >
               <CloseIcon />
@@ -6342,14 +6453,14 @@ export default function App() {
             <>
               <button
                 className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 p-3 bg-white/10 text-white rounded-full hover:bg-white/20"
-                title="Previous (←)"
+                title={t('imageViewer.previous')}
                 onClick={(e) => { e.stopPropagation(); prevImage(); }}
               >
                 <ArrowLeft />
               </button>
               <button
                 className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 p-3 bg-white/10 text-white rounded-full hover:bg-white/20"
-                title="Next (→)"
+                title={t('imageViewer.next')}
                 onClick={(e) => { e.stopPropagation(); nextImage(); }}
               >
                 <ArrowRight />
@@ -6360,13 +6471,13 @@ export default function App() {
           {/* Image */}
           <img
             src={mImages[imgViewIndex].src}
-            alt={mImages[imgViewIndex].name || `image-${imgViewIndex + 1}`}
+            alt={mImages[imgViewIndex].name || t('imageViewer.imageFallback', { index: imgViewIndex + 1 })}
             className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
           {/* Caption */}
           <div className="absolute bottom-6 px-3 py-1 rounded bg-black/50 text-white text-xs">
-            {mImages[imgViewIndex].name || `image-${imgViewIndex + 1}`}
+            {mImages[imgViewIndex].name || t('imageViewer.imageFallback', { index: imgViewIndex + 1 })}
             {mImages.length > 1 ? `  (${imgViewIndex + 1}/${mImages.length})` : ""}
           </div>
         </div>
@@ -6388,28 +6499,28 @@ export default function App() {
   if (route === "#/admin") {
     if (!currentUser?.email) {
       return (
-        <AuthShell title="Admin Panel" dark={dark} onToggleDark={toggleDark}>
+        <AuthShell title={t('adminView.title')} dark={dark} onToggleDark={toggleDark} t={t}>
           <p className="text-sm mb-4">
-            You must sign in as an admin to view this page.
+            {t('adminRoute.authRequired')}
           </p>
           <button
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
             onClick={() => (window.location.hash = "#/login")}
           >
-            Go to Sign In
+            {t('adminRoute.goToSignIn')}
           </button>
         </AuthShell>
       );
     }
     if (!currentUser?.is_admin) {
       return (
-        <AuthShell title="Admin Panel" dark={dark} onToggleDark={toggleDark}>
-          <p className="text-sm">Not authorized. Your account is not an admin.</p>
+        <AuthShell title={t('adminView.title')} dark={dark} onToggleDark={toggleDark} t={t}>
+          <p className="text-sm">{t('adminRoute.notAuthorized')}</p>
           <button
             className="mt-4 px-4 py-2 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10"
             onClick={() => (window.location.hash = "#/notes")}
           >
-            Back to Notes
+            {t('adminRoute.backToNotes')}
           </button>
         </AuthShell>
       );
@@ -6433,6 +6544,7 @@ export default function App() {
           onToggleDark={toggleDark}
           onRegister={register}
           goLogin={() => navigate("#/login")}
+          t={t}
         />
       );
     }
@@ -6443,6 +6555,7 @@ export default function App() {
           onToggleDark={toggleDark}
           onLoginWithKey={signInWithSecret}
           goLogin={() => navigate("#/login")}
+          t={t}
         />
       );
     }
@@ -6454,6 +6567,7 @@ export default function App() {
         goRegister={() => navigate("#/register")}
         goSecret={() => navigate("#/login-secret")}
         allowRegistration={allowRegistration}
+        t={t}
       />
     );
   }
@@ -6471,6 +6585,7 @@ export default function App() {
         permanent={alwaysShowSidebarOnWide && windowWidth >= 700}
         width={sidebarWidth}
         onResize={setSidebarWidth}
+        t={t}
       />
 
       {/* Settings Panel */}
@@ -6489,6 +6604,8 @@ export default function App() {
         setLocalAiEnabled={setLocalAiEnabled}
         showGenericConfirm={showGenericConfirm}
         showToast={showToast}
+        i18n={i18n}
+        t={t}
       />
 
       {/* Admin Panel */}
@@ -6508,6 +6625,7 @@ export default function App() {
         currentUser={currentUser}
         showGenericConfirm={showGenericConfirm}
         showToast={showToast}
+        t={t}
       />
 
       <NotesUI
@@ -6573,6 +6691,7 @@ export default function App() {
         isAiLoading={isAiLoading}
         aiLoadingProgress={aiLoadingProgress}
         onAiSearch={handleAiSearch}
+        t={t}
         // formatting props
         formatComposer={formatComposer}
         showComposerFmt={showComposerFmt}
@@ -6631,7 +6750,7 @@ export default function App() {
             style={{ backgroundColor: dark ? "rgba(40,40,40,0.95)" : "rgba(255,255,255,0.95)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-2">{genericConfirmConfig.title || "Confirm Action"}</h3>
+            <h3 className="text-lg font-semibold mb-2">{genericConfirmConfig.title || t('confirm.confirmAction')}</h3>
             <p className="text-sm text-gray-600 dark:text-gray-300">
               {genericConfirmConfig.message}
             </p>
@@ -6640,7 +6759,7 @@ export default function App() {
                 className="px-4 py-2 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10"
                 onClick={() => setGenericConfirmOpen(false)}
               >
-                {genericConfirmConfig.cancelText || "Cancel"}
+                {genericConfirmConfig.cancelText || t('common.cancel')}
               </button>
               <button
                 className={`px-4 py-2 rounded-lg ${genericConfirmConfig.danger ? "bg-red-600 text-white hover:bg-red-700" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
@@ -6651,7 +6770,7 @@ export default function App() {
                   }
                 }}
               >
-                {genericConfirmConfig.confirmText || "Confirm"}
+                {genericConfirmConfig.confirmText || t('common.confirm')}
               </button>
             </div>
           </div>
