@@ -459,11 +459,7 @@ function DrawingCanvas({ data, onChange, width = 800, height = 600, readOnly = f
       )}
 
       {/* Info */}
-      <div className="text-xs text-gray-500 mt-2">
         {paths.length} {paths.length !== 1 ? t('drawing.strokes') : t('drawing.stroke')}
-        {mode === 'view' && ` ${t('drawing.viewModeHint')}`}
-        {readOnly && mode === 'draw' && ` ${t('drawing.readOnlyHint')}`}
-      </div>
     </div>
   );
 }

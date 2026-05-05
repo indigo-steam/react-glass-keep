@@ -173,6 +173,7 @@ const modalBgFor = (colorKey, dark) => {
 
 /** ---------- Special tag filters ---------- */
 const ALL_IMAGES = "__ALL_IMAGES__";
+const TRASH = "TRASH";
 
 /** ---------- Icons ---------- */
 const PinOutline = () => (
@@ -290,6 +291,21 @@ const GridIcon = () => (
 const ListIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+  </svg>
+);
+
+const DetailsIcon = () => (
+  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h10" />
+  </svg>
+);
+
+const LargeGridIcon = () => (
+  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="3" width="8" height="8" rx="1" />
+    <rect x="13" y="3" width="8" height="8" rx="1" />
+    <rect x="3" y="13" width="8" height="8" rx="1" />
+    <rect x="13" y="13" width="8" height="8" rx="1" />
   </svg>
 );
 
@@ -479,6 +495,26 @@ function formatEditedStamp(iso) {
   return `${month} ${day}, '${yy}`;
 }
 
+function formatNoteFriendlyDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatNoteDateOnly(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
 /** ---------- Global CSS injection ---------- */
 const globalCSS = `
 :root {
@@ -608,11 +644,17 @@ html:not(.dark) .note-content pre .code-copy-btn {
 
 .dragging { opacity: 0.5; transform: scale(1.05); }
 .drag-over { outline: 2px dashed rgba(99,102,241,.6); outline-offset: 6px; }
-.masonry-grid { column-gap: 1.5rem; column-count: 1; }
-@media (min-width: 640px) { .masonry-grid { column-count: 2; } }
-@media (min-width: 768px) { .masonry-grid { column-count: 3; } }
-@media (min-width: 1024px) { .masonry-grid { column-count: 4; } }
-@media (min-width: 1280px) { .masonry-grid { column-count: 5; } }
+.notes-grid { display: grid; gap: 1rem; grid-template-columns: repeat(1, minmax(0, 1fr)); }
+@media (min-width: 640px) { .notes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .notes-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .notes-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.notes-grid-large { gap: 1.5rem; }
+@media (max-width: 768px) {
+  .notes-grid-large { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+  .notes-grid-large .note-card { min-height: 170px; }
+}
+@media (min-width: 1024px) { .notes-grid-large { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .notes-grid-large { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* New grid layout to place notes row-wise (left-to-right, top-to-bottom) */
 /* Keep-like masonry using CSS Grid with JS-calculated row spans (preserves horizontal order) */
@@ -1150,6 +1192,9 @@ function DrawingPreview({ data, width, height, darkMode = false }) {
 /** ---------- Note Card ---------- */
 function NoteCard({
   n, dark,
+  notesViewMode = "grid",
+  isMobile = false,
+  onStartMulti,
   openModal, togglePin,
   // multi-select
   multiMode = false,
@@ -1184,6 +1229,15 @@ function NoteCard({
 
   const imgs = n.images || [];
   const mainImg = imgs[0];
+  const noteDateSource = n.updated_at || n.created_at || n.timestamp;
+  const isListMode = notesViewMode === "list";
+  const isDetailsMode = notesViewMode === "details";
+  const isLargeGridMode = notesViewMode === "large-grid";
+  const isGridFamilyMode = notesViewMode === "grid" || notesViewMode === "large-grid";
+  const useCompactMobileList = isListMode && isMobile;
+  const cardDate = useCompactMobileList
+    ? formatNoteDateOnly(noteDateSource)
+    : formatNoteFriendlyDate(noteDateSource);
 
   const MAX_TAG_CHIPS = 4;
   const allTags = Array.isArray(n.tags) ? n.tags : [];
@@ -1191,16 +1245,95 @@ function NoteCard({
   const displayTags = allTags.slice(0, MAX_TAG_CHIPS);
 
   const group = n.pinned ? "pinned" : "others";
+  const longPressTimerRef = useRef(null);
+  const didLongPressRef = useRef(false);
+  const pressStartRef = useRef(null);
+  const activePointerIdRef = useRef(null);
+  const LONG_PRESS_MS = 480;
+  const MOVE_TOLERANCE_PX = 12;
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = (x, y, pointerId = null) => {
+    if (!isMobile || multiMode) return;
+    didLongPressRef.current = false;
+    pressStartRef.current = { x, y };
+    activePointerIdRef.current = pointerId;
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      didLongPressRef.current = true;
+      try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(10); } catch (e) { }
+      onStartMulti?.();
+      onToggleSelect?.(n.id, true);
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelLongPressOnMove = (x, y, pointerId = null) => {
+    if (pointerId !== null && activePointerIdRef.current !== null && pointerId !== activePointerIdRef.current) return;
+    const start = pressStartRef.current;
+    if (!start) return;
+    const dx = Math.abs(x - start.x);
+    const dy = Math.abs(y - start.y);
+    if (dx > MOVE_TOLERANCE_PX || dy > MOVE_TOLERANCE_PX) clearLongPressTimer();
+  };
+
+  const endLongPress = () => {
+    clearLongPressTimer();
+    activePointerIdRef.current = null;
+    pressStartRef.current = null;
+  };
+
+  useEffect(() => () => clearLongPressTimer(), []);
 
   return (
     <div
-      draggable={!multiMode}
-      onDragStart={(e) => { if (!multiMode) onDragStart(n.id, e); }}
-      onDragOver={(e) => { if (!multiMode) onDragOver(n.id, group, e); }}
-      onDragLeave={(e) => { if (!multiMode) onDragLeave(e); }}
-      onDrop={(e) => { if (!multiMode) onDrop(n.id, group, e); }}
-      onDragEnd={(e) => { if (!multiMode) onDragEnd(e); }}
+      draggable={!multiMode && !isMobile}
+      onDragStart={(e) => { if (!multiMode && !isMobile) onDragStart(n.id, e); }}
+      onDragOver={(e) => { if (!multiMode && !isMobile) onDragOver(n.id, group, e); }}
+      onDragLeave={(e) => { if (!multiMode && !isMobile) onDragLeave(e); }}
+      onDrop={(e) => { if (!multiMode && !isMobile) onDrop(n.id, group, e); }}
+      onDragEnd={(e) => { if (!multiMode && !isMobile) onDragEnd(e); }}
+      onPointerDown={(e) => {
+        if (e.pointerType === "touch") startLongPress(e.clientX, e.clientY, e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (e.pointerType === "touch") cancelLongPressOnMove(e.clientX, e.clientY, e.pointerId);
+      }}
+      onPointerUp={(e) => {
+        if (e.pointerType === "touch") endLongPress();
+      }}
+      onPointerCancel={(e) => {
+        if (e.pointerType === "touch") endLongPress();
+      }}
+      onTouchStart={(e) => {
+        const t = e.touches?.[0];
+        if (t) startLongPress(t.clientX, t.clientY);
+      }}
+      onTouchMove={(e) => {
+        const t = e.touches?.[0];
+        if (t) cancelLongPressOnMove(t.clientX, t.clientY);
+      }}
+      onTouchEnd={endLongPress}
+      onTouchCancel={endLongPress}
+      onContextMenu={(e) => {
+        if (!isMobile || multiMode) return;
+        e.preventDefault();
+        didLongPressRef.current = true;
+        try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(10); } catch (err) { }
+        onStartMulti?.();
+        onToggleSelect?.(n.id, true);
+      }}
       onClick={(e) => {
+        if (didLongPressRef.current) {
+          didLongPressRef.current = false;
+          e.stopPropagation();
+          return;
+        }
         if (multiMode) {
           // In multi-select mode, clicking anywhere toggles selection
           e.stopPropagation();
@@ -1210,7 +1343,7 @@ function NoteCard({
           openModal(n.id);
         }
       }}
-      className={`note-card glass-card rounded-xl p-4 mb-6 cursor-pointer transform hover:scale-[1.02] transition-transform duration-200 relative min-h-[54px] group ${multiMode && selected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-transparent' : ''
+      className={`note-card glass-card rounded-xl ${useCompactMobileList ? "p-3 mb-3" : (isListMode || isDetailsMode) ? "p-4 mb-6" : "p-4 mb-0"} cursor-pointer transform hover:scale-[1.02] transition-transform duration-200 relative ${isGridFamilyMode ? (isLargeGridMode ? "min-h-[210px]" : "min-h-[170px]") : "min-h-[54px]"} group ${multiMode && selected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-transparent' : ''
         }`}
       style={{ backgroundColor: bgFor(n.color, dark) }}
       data-id={n.id}
@@ -1272,9 +1405,18 @@ function NoteCard({
         </div>
       )}
 
-      {n.title && <h3 className="font-bold text-lg mb-2 break-words">{n.title}</h3>}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {n.title && (
+            <h3 className={`font-bold break-words ${isLargeGridMode ? "text-xl mb-3" : "text-lg mb-2"} ${useCompactMobileList ? "text-base leading-snug truncate mb-0" : ""}`}>
+              {n.title}
+            </h3>
+          )}
+        </div>
+        <div className="text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">{cardDate}</div>
+      </div>
 
-      {mainImg && (
+      {!useCompactMobileList && mainImg && (
         <div className="mb-3 relative overflow-hidden rounded-lg border border-[var(--border-light)]">
           <img src={mainImg.src} alt={mainImg.name || t('notes.noteImage')} className="w-full h-40 object-cover" />
           {imgs.length > 1 && (
@@ -1285,14 +1427,14 @@ function NoteCard({
         </div>
       )}
 
-      {!isChecklist && !isDraw ? (
-        <div className="text-sm break-words whitespace-pre-wrap line-clamp-6">
+      {!useCompactMobileList && !isChecklist && !isDraw ? (
+        <div className={`text-sm break-words whitespace-pre-wrap ${isDetailsMode ? "line-clamp-2" : (isLargeGridMode && isMobile) ? "line-clamp-3" : "line-clamp-6"}`}>
           {displayText}
         </div>
-      ) : isDraw ? (
+      ) : !useCompactMobileList && isDraw ? (
         <DrawingPreview data={n.content} width={100} height={150} darkMode={dark} />
-      ) : (
-        <div className="space-y-2">
+      ) : !useCompactMobileList ? (
+        <div className={`space-y-2 ${isLargeGridMode ? "text-base" : ""}`}>
           {visibleItems.map((it) => (
             <ChecklistRow
               key={it.id}
@@ -1311,9 +1453,9 @@ function NoteCard({
           )}
           <div className="text-xs text-gray-600 dark:text-gray-300">{t('notes.completed', { done, total })}</div>
         </div>
-      )}
+      ) : null}
 
-      {!!displayTags.length && (
+      {!!displayTags.length && !useCompactMobileList && (
         <div className="mt-4 text-xs flex flex-wrap gap-2">
           {displayTags.map((tag) => (
             <span
@@ -2212,6 +2354,7 @@ function NotesUI({
   // new for sidebar
   openSidebar,
   activeTagFilter,
+  setActiveTagFilter,
   sidebarPermanent,
   sidebarWidth,
   // formatting
@@ -2235,13 +2378,14 @@ function NotesUI({
   onSelectAllPinned,
   onSelectAllOthers,
   onBulkDelete,
+  onBulkRestore,
   onBulkPin,
   onBulkArchive,
   onBulkColor,
   onBulkDownloadZip,
   // view mode
-  listView,
-  onToggleViewMode,
+  notesViewMode,
+  setNotesViewMode,
   // SSE connection status
   sseConnected,
   isOnline,
@@ -2262,6 +2406,7 @@ function NotesUI({
   const tagLabel =
     activeTagFilter === ALL_IMAGES ? t('notes.allImages') :
       activeTagFilter === 'ARCHIVED' ? t('notes.archived') :
+        activeTagFilter === TRASH ? t('notes.trash') :
         activeTagFilter;
 
   // Close header menu when scrolling
@@ -2294,6 +2439,12 @@ function NotesUI({
             <button className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm" onClick={onBulkDelete}>
               {t('common.delete')}
             </button>
+            {activeTagFilter === TRASH && (
+              <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm flex items-center gap-1" onClick={onBulkRestore}>
+                <ArchiveIcon />
+                {t('notes.restore')}
+              </button>
+            )}
             <button
               ref={multiColorBtnRef}
               type="button"
@@ -2322,16 +2473,18 @@ function NotesUI({
                 </div>
               </div>
             </Popover>
-            {activeTagFilter !== 'ARCHIVED' && (
+            {activeTagFilter !== 'ARCHIVED' && activeTagFilter !== TRASH && (
               <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm flex items-center gap-1" onClick={() => onBulkPin(true)}>
                 <PinIcon />
                 {t('notes.pin')}
               </button>
             )}
-            <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm flex items-center gap-1" onClick={onBulkArchive}>
-              <ArchiveIcon />
-              {activeTagFilter === 'ARCHIVED' ? t('notes.unarchive') : t('notes.archive')}
-            </button>
+            {activeTagFilter !== TRASH && (
+              <button className="px-3 py-1.5 rounded-lg border border-[var(--border-light)] hover:bg-black/5 dark:hover:bg-white/10 text-sm flex items-center gap-1" onClick={onBulkArchive}>
+                <ArchiveIcon />
+                {activeTagFilter === 'ARCHIVED' ? t('notes.unarchive') : t('notes.archive')}
+              </button>
+            )}
             <span className="text-xs opacity-70 ml-2">{t('multi.selected', { count: selectedIds.length })}</span>
           </div>
           <button
@@ -2371,7 +2524,7 @@ function NotesUI({
           <h1 className="hidden sm:block text-2xl sm:text-3xl font-bold">{t('app.name')}</h1>
           {activeTagFilter && (
             <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 border border-indigo-600/20">
-              {activeTagFilter === ALL_IMAGES || activeTagFilter === 'ARCHIVED' ? tagLabel : t('notes.tagLabel', { tag: tagLabel })}
+              {activeTagFilter === ALL_IMAGES || activeTagFilter === 'ARCHIVED' || activeTagFilter === TRASH ? tagLabel : t('notes.tagLabel', { tag: tagLabel })}
             </span>
           )}
 
@@ -2463,10 +2616,31 @@ function NotesUI({
                 </button>
                 <button
                   className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
-                  onClick={() => { setHeaderMenuOpen(false); onToggleViewMode?.(); }}
+                  onClick={() => { setHeaderMenuOpen(false); setNotesViewMode?.('list'); }}
                 >
-                  {listView ? <GridIcon /> : <ListIcon />}
-                  {listView ? t('view.gridView') : t('view.listView')}
+                  <ListIcon />
+                  {t('view.listView')}
+                </button>
+                <button
+                  className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                  onClick={() => { setHeaderMenuOpen(false); setNotesViewMode?.('details'); }}
+                >
+                  <DetailsIcon />
+                  {t('view.detailsView')}
+                </button>
+                <button
+                  className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                  onClick={() => { setHeaderMenuOpen(false); setNotesViewMode?.('grid'); }}
+                >
+                  <GridIcon />
+                  {t('view.gridView')}
+                </button>
+                <button
+                  className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                  onClick={() => { setHeaderMenuOpen(false); setNotesViewMode?.('large-grid'); }}
+                >
+                  <LargeGridIcon />
+                  {t('view.largeGridView')}
                 </button>
                 {/* Theme toggle text item */}
                 <button
@@ -2482,6 +2656,13 @@ function NotesUI({
                 >
                   <CheckSquareIcon />
                   {t('view.multiSelect')}
+                </button>
+                <button
+                  className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                  onClick={() => { setHeaderMenuOpen(false); setActiveTagFilter?.(TRASH); }}
+                >
+                  <Trash />
+                  {t('notes.trash')}
                 </button>
                 {currentUser?.is_admin && (
                   <button
@@ -2878,7 +3059,7 @@ function NotesUI({
         {
           pinned.length > 0 && (
             <section className="mb-10">
-              {listView ? (
+              {notesViewMode === "list" || notesViewMode === "details" ? (
                 <div className="max-w-2xl mx-auto">
                   <h2 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3 ml-1">
                     {t('composer.pinned')}
@@ -2889,7 +3070,7 @@ function NotesUI({
                   {t('composer.pinned')}
                 </h2>
               )}
-              <div className={listView ? "max-w-2xl mx-auto space-y-6" : "masonry-grid"}>
+              <div className={notesViewMode === "list" ? "max-w-2xl mx-auto space-y-3" : notesViewMode === "details" ? "max-w-2xl mx-auto space-y-4" : notesViewMode === "large-grid" ? "notes-grid notes-grid-large" : "notes-grid"}>
                 {pinned.map((n) => (
                   <NoteCard
                     key={n.id}
@@ -2898,9 +3079,10 @@ function NotesUI({
                     openModal={openModal}
                     togglePin={togglePin}
                     multiMode={multiMode}
+                    onStartMulti={onStartMulti}
                     selected={selectedIds.includes(String(n.id))}
                     onToggleSelect={onToggleSelect}
-                    disablePin={('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || activeTagFilter === 'ARCHIVED'}
+                    disablePin={('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || activeTagFilter === 'ARCHIVED' || activeTagFilter === TRASH}
                     onDragStart={onDragStart}
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
@@ -2909,6 +3091,8 @@ function NotesUI({
                     isOnline={isOnline}
                     onUpdateChecklistItem={onUpdateChecklistItem}
                     currentUser={currentUser}
+                    notesViewMode={notesViewMode}
+                    isMobile={window.innerWidth <= 768}
                   />
                 ))}
               </div>
@@ -2920,7 +3104,7 @@ function NotesUI({
           others.length > 0 && (
             <section>
               {pinned.length > 0 && (
-                listView ? (
+                notesViewMode === "list" || notesViewMode === "details" ? (
                   <div className="max-w-2xl mx-auto">
                     <h2 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3 ml-1">
                       {t('composer.others')}
@@ -2932,7 +3116,7 @@ function NotesUI({
                   </h2>
                 )
               )}
-              <div className={listView ? "max-w-2xl mx-auto space-y-6" : "masonry-grid"}>
+              <div className={notesViewMode === "list" ? "max-w-2xl mx-auto space-y-3" : notesViewMode === "details" ? "max-w-2xl mx-auto space-y-4" : notesViewMode === "large-grid" ? "notes-grid notes-grid-large" : "notes-grid"}>
                 {others.map((n) => (
                   <NoteCard
                     key={n.id}
@@ -2941,9 +3125,10 @@ function NotesUI({
                     openModal={openModal}
                     togglePin={togglePin}
                     multiMode={multiMode}
+                    onStartMulti={onStartMulti}
                     selected={selectedIds.includes(String(n.id))}
                     onToggleSelect={onToggleSelect}
-                    disablePin={('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || activeTagFilter === 'ARCHIVED'}
+                    disablePin={('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || activeTagFilter === 'ARCHIVED' || activeTagFilter === TRASH}
                     onDragStart={onDragStart}
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
@@ -2952,6 +3137,8 @@ function NotesUI({
                     isOnline={isOnline}
                     onUpdateChecklistItem={onUpdateChecklistItem}
                     currentUser={currentUser}
+                    notesViewMode={notesViewMode}
+                    isMobile={window.innerWidth <= 768}
                   />
                 ))}
               </div>
@@ -3323,14 +3510,21 @@ export default function App() {
     setSelectedIds((prev) => Array.from(new Set([...prev, ...ids])));
   };
 
-  // -------- View mode: Grid vs List --------
-  const [listView, setListView] = useState(() => {
-    try { return localStorage.getItem("viewMode") === "list"; } catch (e) { return false; }
+  // -------- View mode: list | details | grid | large-grid --------
+  const [notesViewMode, setNotesViewMode] = useState(() => {
+    try {
+      const savedView = localStorage.getItem("viewMode");
+      const isMobile = window.innerWidth <= 768;
+      if (["list", "details", "grid", "large-grid"].includes(savedView)) return savedView;
+      return isMobile ? "list" : "grid";
+    } catch (e) {
+      const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+      return isMobile ? "list" : "grid";
+    }
   });
   useEffect(() => {
-    try { localStorage.setItem("viewMode", listView ? "list" : "grid"); } catch (e) { }
-  }, [listView]);
-  const onToggleViewMode = () => setListView((v) => !v);
+    try { localStorage.setItem("viewMode", notesViewMode); } catch (e) { }
+  }, [notesViewMode]);
 
   // Save sidebar settings
   useEffect(() => {
@@ -3365,7 +3559,8 @@ export default function App() {
         try {
           // Fire deletes sequentially to keep API simple
           for (const id of selectedIds) {
-            await api(`/notes/${id}`, { method: "DELETE", token });
+            const url = tagFilter === TRASH ? `/notes/${id}?permanent=1` : `/notes/${id}`;
+            await api(url, { method: "DELETE", token });
           }
           setNotes((prev) => prev.filter((n) => !selectedIds.includes(String(n.id))));
           onExitMulti();
@@ -3374,6 +3569,21 @@ export default function App() {
         }
       }
     });
+  };
+
+  const onBulkRestore = async () => {
+    if (!selectedIds.length || tagFilter !== TRASH) return;
+    try {
+      for (const id of selectedIds) {
+        await api(`/notes/${id}/restore`, { method: "POST", token });
+      }
+      invalidateNotesCache();
+      invalidateArchivedNotesCache();
+      await loadTrashNotes();
+      onExitMulti();
+    } catch (e) {
+      alert(e.message || t('errors.failedRestoreNote'));
+    }
   };
 
   const onBulkPin = async (pinnedVal) => {
@@ -3389,19 +3599,11 @@ export default function App() {
       invalidateNotesCache();
       invalidateArchivedNotesCache();
       // Reload fresh data since we invalidated caches
-      if (tagFilter === 'ARCHIVED') {
-        loadArchivedNotes().catch(() => { });
-      } else {
-        loadNotes().catch(() => { });
-      }
+      loadNotesByCurrentFilter().catch(() => { });
     } catch (e) {
       console.error("Bulk pin failed", e);
       // Reload appropriate notes based on current view
-      if (tagFilter === 'ARCHIVED') {
-        loadArchivedNotes().catch(() => { });
-      } else {
-        loadNotes().catch(() => { });
-      }
+      loadNotesByCurrentFilter().catch(() => { });
     }
   };
 
@@ -3434,11 +3636,7 @@ export default function App() {
     } catch (e) {
       console.error(`Bulk ${isArchiving ? 'archive' : 'unarchive'} failed`, e);
       // Reload notes on failure
-      if (tagFilter === 'ARCHIVED') {
-        loadArchivedNotes().catch(() => { });
-      } else {
-        loadNotes().catch(() => { });
-      }
+      loadNotesByCurrentFilter().catch(() => { });
     }
   };
 
@@ -3487,7 +3685,7 @@ export default function App() {
       }
     } catch (e) {
       console.error("Bulk color failed", e);
-      loadNotes().catch(() => { });
+      loadNotesByCurrentFilter().catch(() => { });
     }
   };
 
@@ -3667,8 +3865,7 @@ export default function App() {
       console.error('Error caching notes:', e);
     }
   };
-  // Consistent ordering: pinned first, then by position (server-persisted DnD),
-  // fallback to updated_at/timestamp when position is missing
+  // Consistent ordering: pinned first, then by creation date (newest first)
   const sortNotesByRecency = (arr) => {
     try {
       const list = Array.isArray(arr) ? arr.slice() : [];
@@ -3676,14 +3873,9 @@ export default function App() {
         const ap = a?.pinned ? 1 : 0;
         const bp = b?.pinned ? 1 : 0;
         if (ap !== bp) return bp - ap; // pinned first
-        const apos = Number.isFinite(+a?.position) ? +a.position : null;
-        const bpos = Number.isFinite(+b?.position) ? +b.position : null;
-        if (apos != null && bpos != null && !Number.isNaN(apos) && !Number.isNaN(bpos)) {
-          return bpos - apos; // higher position first (most recent/top)
-        }
-        const at = new Date(a?.updated_at || a?.timestamp || 0).getTime();
-        const bt = new Date(b?.updated_at || b?.timestamp || 0).getTime();
-        return bt - at; // fallback newest first
+        const at = new Date(a?.created_at || a?.timestamp || 0).getTime();
+        const bt = new Date(b?.created_at || b?.timestamp || 0).getTime();
+        return bt - at; // newest first, oldest last
       });
     } catch {
       return Array.isArray(arr) ? arr : [];
@@ -3795,23 +3987,37 @@ export default function App() {
       setNotesLoading(false);
     }
   };
+
+  const loadTrashNotes = async () => {
+    if (!token) return;
+    setNotesLoading(true);
+    try {
+      const data = await api("/notes/trash", { token });
+      const notesArray = Array.isArray(data) ? data : [];
+      setNotes(sortNotesByRecency(notesArray));
+    } catch (error) {
+      console.error("Error loading trash notes:", error);
+      setNotes([]);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
+  const loadNotesByCurrentFilter = async () => {
+    if (tagFilter === 'ARCHIVED') return loadArchivedNotes();
+    if (tagFilter === TRASH) return loadTrashNotes();
+    return loadNotes();
+  };
+
   useEffect(() => {
     if (!token) return;
 
     console.log("Tag filter changed to:", tagFilter, "from previous value");
 
     // Load appropriate notes based on tag filter
-    if (tagFilter === 'ARCHIVED') {
-      console.log("Loading archived notes...");
-      loadArchivedNotes().catch((error) => {
-        console.error("Failed to load archived notes:", error);
-      });
-    } else {
-      console.log("Loading regular notes...");
-      loadNotes().catch((error) => {
-        console.error("Failed to load regular notes:", error);
-      });
-    }
+    loadNotesByCurrentFilter().catch((error) => {
+      console.error("Failed to load notes by filter:", error);
+    });
   }, [token, tagFilter]);
 
   // Check registration setting on app load
@@ -3824,7 +4030,7 @@ export default function App() {
 
   useEffect(() => {
     if (token) {
-      loadNotes().catch(() => { });
+      loadNotesByCurrentFilter().catch(() => { });
     }
     if (!token) return;
 
@@ -3852,11 +4058,7 @@ export default function App() {
             const msg = JSON.parse(e.data || '{}');
             if (msg && msg.type === 'note_updated') {
               // Refresh notes list on any note update relevant to this user
-              if (tagFilter === 'ARCHIVED') {
-                loadArchivedNotes().catch(() => { });
-              } else {
-                loadNotes().catch(() => { });
-              }
+              loadNotesByCurrentFilter().catch(() => { });
             }
           } catch (e) { }
         };
@@ -3865,11 +4067,7 @@ export default function App() {
           try {
             const msg = JSON.parse(e.data || '{}');
             if (msg && msg.noteId) {
-              if (tagFilter === 'ARCHIVED') {
-                loadArchivedNotes().catch(() => { });
-              } else {
-                loadNotes().catch(() => { });
-              }
+              loadNotesByCurrentFilter().catch(() => { });
             }
           } catch (e) { }
         });
@@ -3922,11 +4120,7 @@ export default function App() {
       pollInterval = setInterval(() => {
         // Only poll if SSE is not connected
         if (!es || es.readyState === EventSource.CLOSED) {
-          if (tagFilter === 'ARCHIVED') {
-            loadArchivedNotes().catch(() => { });
-          } else {
-            loadNotes().catch(() => { });
-          }
+          loadNotesByCurrentFilter().catch(() => { });
         }
       }, 30000); // Poll every 30 seconds as fallback
     };
@@ -3950,11 +4144,7 @@ export default function App() {
           }
 
           // Also refresh notes when page becomes visible
-          if (tagFilter === 'ARCHIVED') {
-            loadArchivedNotes().catch(() => { });
-          } else {
-            loadNotes().catch(() => { });
-          }
+          loadNotesByCurrentFilter().catch(() => { });
         } catch (error) {
           // If health check fails with 401, the api function will handle auth expiration
           // Otherwise, just log and try to reconnect anyway
@@ -3964,11 +4154,7 @@ export default function App() {
             if (es && es.readyState === EventSource.CLOSED) {
               connectSSE();
             }
-            if (tagFilter === 'ARCHIVED') {
-              loadArchivedNotes().catch(() => { });
-            } else {
-              loadNotes().catch(() => { });
-            }
+            loadNotesByCurrentFilter().catch(() => { });
           }
         }
       }
@@ -4359,6 +4545,18 @@ export default function App() {
       }
     } catch (e) {
       alert(e.message || t('errors.failedArchiveNote'));
+    }
+  };
+
+  const handleRestoreNote = async (noteId) => {
+    try {
+      await api(`/notes/${noteId}/restore`, { method: "POST", token });
+      invalidateNotesCache();
+      invalidateArchivedNotesCache();
+      await loadNotesByCurrentFilter();
+      if (tagFilter === TRASH) closeModal();
+    } catch (e) {
+      alert(e.message || t('errors.failedRestoreNote'));
     }
   };
 
@@ -5170,7 +5368,8 @@ export default function App() {
         return;
       }
 
-      await api(`/notes/${activeId}`, { method: "DELETE", token });
+      const url = tagFilter === TRASH ? `/notes/${activeId}?permanent=1` : `/notes/${activeId}`;
+      await api(url, { method: "DELETE", token });
       invalidateNotesCache();
 
       setNotes((prev) => prev.filter((n) => String(n.id) !== String(activeId)));
@@ -5339,12 +5538,12 @@ export default function App() {
   /** -------- Derived lists (search + tag filter) -------- */
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    const tag = tagFilter === ALL_IMAGES ? null : (tagFilter === 'ARCHIVED' ? null : (tagFilter?.toLowerCase() || null));
+    const tag = tagFilter === ALL_IMAGES ? null : ((tagFilter === 'ARCHIVED' || tagFilter === TRASH) ? null : (tagFilter?.toLowerCase() || null));
 
     return notes.filter((n) => {
       if (tagFilter === ALL_IMAGES) {
         if (!(n.images && n.images.length)) return false;
-      } else if (tagFilter === 'ARCHIVED') {
+      } else if (tagFilter === 'ARCHIVED' || tagFilter === TRASH) {
         // In archived view, show all notes (they're already filtered by the backend)
         // Just apply search filter
       } else if (tag && !(n.tags || []).some((t) => String(t).toLowerCase() === tag)) {
@@ -5361,7 +5560,7 @@ export default function App() {
   }, [notes, search, tagFilter]);
   const pinned = filtered.filter((n) => n.pinned);
   const others = filtered.filter((n) => !n.pinned);
-  const filteredEmptyWithSearch = filtered.length === 0 && notes.length > 0 && !!(search || (tagFilter && tagFilter !== 'ARCHIVED'));
+  const filteredEmptyWithSearch = filtered.length === 0 && notes.length > 0 && !!(search || (tagFilter && tagFilter !== 'ARCHIVED' && tagFilter !== TRASH));
   const allEmpty = notes.length === 0;
 
   /** -------- Modal link handler: open links in new tab (no auto-enter edit) -------- */
@@ -5670,19 +5869,30 @@ export default function App() {
                             <DownloadIcon />
                             {t('modal.downloadMd')}
                           </button>
-                          <button
-                            className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
-                            onClick={() => {
-                              const note = notes.find(nn => String(nn.id) === String(activeId));
-                              if (note) {
-                                handleArchiveNote(activeId, !note.archived);
-                                setModalMenuOpen(false);
-                              }
-                            }}
-                          >
-                            <ArchiveIcon />
-                            {activeNoteObj?.archived ? t('notes.unarchive') : t('notes.archive')}
-                          </button>
+                          {tagFilter !== TRASH && (
+                            <button
+                              className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                              onClick={() => {
+                                const note = notes.find(nn => String(nn.id) === String(activeId));
+                                if (note) {
+                                  handleArchiveNote(activeId, !note.archived);
+                                  setModalMenuOpen(false);
+                                }
+                              }}
+                            >
+                              <ArchiveIcon />
+                              {activeNoteObj?.archived ? t('notes.unarchive') : t('notes.archive')}
+                            </button>
+                          )}
+                          {tagFilter === TRASH && (
+                            <button
+                              className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                              onClick={() => { if (activeId != null) handleRestoreNote(activeId); setModalMenuOpen(false); }}
+                            >
+                              <ArchiveIcon />
+                              {t('notes.restore')}
+                            </button>
+                          )}
                           <button
                             className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm text-red-600 ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                             onClick={() => { setConfirmDeleteOpen(true); setModalMenuOpen(false); }}
@@ -5696,7 +5906,7 @@ export default function App() {
                   )}
 
                   {/* Pin button - hidden when offline or in archived view */}
-                  {isOnline && tagFilter !== 'ARCHIVED' && (
+                  {isOnline && tagFilter !== 'ARCHIVED' && tagFilter !== TRASH && (
                     <button
                       className="rounded-full p-2 opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       title={t('modal.pinToggle')}
@@ -6682,6 +6892,7 @@ export default function App() {
         headerBtnRef={headerBtnRef}
         openSidebar={() => setSidebarOpen(true)}
         activeTagFilter={tagFilter}
+        setActiveTagFilter={setTagFilter}
         sidebarPermanent={alwaysShowSidebarOnWide && windowWidth >= 700}
         sidebarWidth={sidebarWidth}
         // AI props
@@ -6717,13 +6928,14 @@ export default function App() {
         onSelectAllPinned={onSelectAllPinned}
         onSelectAllOthers={onSelectAllOthers}
         onBulkDelete={onBulkDelete}
+        onBulkRestore={onBulkRestore}
         onBulkPin={onBulkPin}
         onBulkArchive={onBulkArchive}
         onBulkColor={onBulkColor}
         onBulkDownloadZip={onBulkDownloadZip}
         // view mode
-        listView={listView}
-        onToggleViewMode={onToggleViewMode}
+        notesViewMode={notesViewMode}
+        setNotesViewMode={setNotesViewMode}
         // SSE connection status
         sseConnected={sseConnected}
         isOnline={isOnline}

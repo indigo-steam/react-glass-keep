@@ -99,6 +99,8 @@
     "searchAiPlaceholder": "Search or Ask AI...",
     "allNotes": "All Notes",
     "archived": "Archived Notes",
+    "trash": "Trash",
+    "restore": "Restore",
     "allImages": "All Images",
     "addTags": "Add tags (comma-separated)",
     "titlePlaceholder": "Title (optional)",
@@ -147,6 +149,8 @@
   "view": {
     "gridView": "Grid View",
     "listView": "List View",
+    "detailsView": "Details View",
+    "largeGridView": "Large Grid View",
     "multiSelect": "Multi select"
   },
   "format": {
@@ -281,6 +285,7 @@
     "networkError": "Network error. Please check your connection.",
     "failedAddNote": "Failed to add note",
     "failedArchiveNote": "Failed to archive note",
+    "failedRestoreNote": "Failed to restore note",
     "failedUpdateAdminSettings": "Failed to update admin settings",
     "failedUpdateUser": "Failed to update user",
     "failedCreateUser": "Failed to create user",
