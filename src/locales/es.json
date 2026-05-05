@@ -99,6 +99,8 @@
     "searchAiPlaceholder": "Buscar o preguntar a IA...",
     "allNotes": "Todas las notas",
     "archived": "Notas archivadas",
+    "trash": "Papelera",
+    "restore": "Restaurar",
     "allImages": "Todas las imágenes",
     "addTags": "Agregar etiquetas (separadas por coma)",
     "titlePlaceholder": "Título (opcional)",
@@ -147,6 +149,8 @@
   "view": {
     "gridView": "Vista de Cuadrícula",
     "listView": "Vista de Lista",
+    "detailsView": "Vista Detallada",
+    "largeGridView": "Vista de Cuadrícula Grande",
     "multiSelect": "Selección múltiple"
   },
   "format": {
@@ -281,6 +285,7 @@
     "networkError": "Error de red. Revisa tu conexión.",
     "failedAddNote": "No se pudo agregar la nota",
     "failedArchiveNote": "No se pudo archivar la nota",
+    "failedRestoreNote": "No se pudo restaurar la nota",
     "failedUpdateAdminSettings": "No se pudo actualizar la configuración de administrador",
     "failedUpdateUser": "No se pudo actualizar el usuario",
     "failedCreateUser": "No se pudo crear el usuario",

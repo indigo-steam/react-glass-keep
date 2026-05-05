@@ -103,9 +103,11 @@ CREATE TABLE IF NOT EXISTS notes (
   pinned INTEGER NOT NULL DEFAULT 0,
   position REAL NOT NULL DEFAULT 0, -- for ordering (higher first)
   timestamp TEXT NOT NULL,
+  created_at TEXT,
   updated_at TEXT,             -- for tracking last edit time
   last_edited_by TEXT,         -- email/name of last editor
   last_edited_at TEXT,         -- timestamp of last edit
+  trashed INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -153,6 +155,10 @@ CREATE TABLE IF NOT EXISTS note_collaborators (
       if (!names.has("updated_at")) {
         db.exec(`ALTER TABLE notes ADD COLUMN updated_at TEXT`);
       }
+      if (!names.has("created_at")) {
+        db.exec(`ALTER TABLE notes ADD COLUMN created_at TEXT`);
+        db.exec(`UPDATE notes SET created_at = timestamp WHERE created_at IS NULL`);
+      }
       if (!names.has("last_edited_by")) {
         db.exec(`ALTER TABLE notes ADD COLUMN last_edited_by TEXT`);
       }
@@ -161,6 +167,9 @@ CREATE TABLE IF NOT EXISTS note_collaborators (
       }
       if (!names.has("archived")) {
         db.exec(`ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
+      }
+      if (!names.has("trashed")) {
+        db.exec(`ALTER TABLE notes ADD COLUMN trashed INTEGER NOT NULL DEFAULT 0`);
       }
     });
     tx();
@@ -276,13 +285,16 @@ const getNoteById = db.prepare("SELECT * FROM notes WHERE id = ?");
 
 // Notes statements
 const listNotes = db.prepare(
-  `SELECT * FROM notes WHERE user_id = ? AND archived = 0 ORDER BY pinned DESC, position DESC, timestamp DESC`
+  `SELECT * FROM notes WHERE user_id = ? AND archived = 0 AND trashed = 0 ORDER BY pinned DESC, COALESCE(created_at, timestamp) DESC`
 );
 const listArchivedNotes = db.prepare(
-  `SELECT * FROM notes WHERE user_id = ? AND archived = 1 ORDER BY timestamp DESC`
+  `SELECT * FROM notes WHERE user_id = ? AND archived = 1 AND trashed = 0 ORDER BY COALESCE(created_at, timestamp) DESC`
+);
+const listTrashedNotes = db.prepare(
+  `SELECT * FROM notes WHERE user_id = ? AND trashed = 1 ORDER BY COALESCE(created_at, timestamp) DESC`
 );
 const listNotesPage = db.prepare(
-  `SELECT * FROM notes WHERE user_id = ? ORDER BY pinned DESC, position DESC, timestamp DESC LIMIT ? OFFSET ?`
+  `SELECT * FROM notes WHERE user_id = ? AND trashed = 0 ORDER BY pinned DESC, COALESCE(created_at, timestamp) DESC LIMIT ? OFFSET ?`
 );
 const getNote = db.prepare("SELECT * FROM notes WHERE id = ? AND user_id = ?");
 const getNoteWithCollaboration = db.prepare(`
@@ -291,8 +303,8 @@ const getNoteWithCollaboration = db.prepare(`
   WHERE n.id = ? AND (n.user_id = ? OR nc.user_id IS NOT NULL)
 `);
 const insertNote = db.prepare(`
-  INSERT INTO notes (id,user_id,type,title,content,items_json,tags_json,images_json,color,pinned,position,timestamp,archived)
-  VALUES (@id,@user_id,@type,@title,@content,@items_json,@tags_json,@images_json,@color,@pinned,@position,@timestamp,0)
+  INSERT INTO notes (id,user_id,type,title,content,items_json,tags_json,images_json,color,pinned,position,timestamp,created_at,updated_at,archived)
+  VALUES (@id,@user_id,@type,@title,@content,@items_json,@tags_json,@images_json,@color,@pinned,@position,@timestamp,@created_at,@updated_at,0)
 `);
 const updateNote = db.prepare(`
   UPDATE notes SET
@@ -338,6 +350,8 @@ const patchPosition = db.prepare(`
   UPDATE notes SET position=@position, pinned=@pinned WHERE id=@id AND user_id=@user_id
 `);
 const deleteNote = db.prepare("DELETE FROM notes WHERE id = ? AND user_id = ?");
+const moveToTrash = db.prepare("UPDATE notes SET trashed = 1, archived = 0 WHERE id = ? AND user_id = ?");
+const restoreFromTrash = db.prepare("UPDATE notes SET trashed = 0 WHERE id = ? AND user_id = ?");
 
 // Collaboration statements
 const getUserByEmail = db.prepare("SELECT * FROM users WHERE lower(email)=lower(?)");
@@ -558,8 +572,8 @@ app.get("/api/notes", auth, (req, res) => {
     WHERE (n.user_id = ? OR EXISTS(
       SELECT 1 FROM note_collaborators nc 
       WHERE nc.note_id = n.id AND nc.user_id = ?
-    )) AND n.archived = 0
-    ORDER BY n.pinned DESC, n.position DESC, n.timestamp DESC
+    )) AND n.archived = 0 AND n.trashed = 0
+    ORDER BY n.pinned DESC, COALESCE(n.created_at, n.timestamp) DESC
   `);
 
   const allNotesWithPagingQuery = db.prepare(`
@@ -567,8 +581,8 @@ app.get("/api/notes", auth, (req, res) => {
     WHERE (n.user_id = ? OR EXISTS(
       SELECT 1 FROM note_collaborators nc 
       WHERE nc.note_id = n.id AND nc.user_id = ?
-    )) AND n.archived = 0
-    ORDER BY n.pinned DESC, n.position DESC, n.timestamp DESC
+    )) AND n.archived = 0 AND n.trashed = 0
+    ORDER BY n.pinned DESC, COALESCE(n.created_at, n.timestamp) DESC
     LIMIT ? OFFSET ?
   `);
 
@@ -598,6 +612,7 @@ app.get("/api/notes", auth, (req, res) => {
         pinned: !!r.pinned,
         position: r.position,
         timestamp: r.timestamp,
+        created_at: r.created_at || r.timestamp,
         updated_at: r.updated_at,
         lastEditedBy: r.last_edited_by,
         lastEditedAt: r.last_edited_at,
@@ -623,6 +638,8 @@ app.post("/api/notes", auth, (req, res) => {
     pinned: body.pinned ? 1 : 0,
     position: typeof body.position === "number" ? body.position : Date.now(),
     timestamp: body.timestamp || nowISO(),
+    created_at: nowISO(),
+    updated_at: nowISO(),
   };
   insertNote.run(n);
   res.status(201).json({
@@ -637,6 +654,8 @@ app.post("/api/notes", auth, (req, res) => {
     pinned: !!n.pinned,
     position: n.position,
     timestamp: n.timestamp,
+    created_at: n.created_at,
+    updated_at: n.updated_at,
   });
 });
 
@@ -704,7 +723,53 @@ app.patch("/api/notes/:id", auth, (req, res) => {
 });
 
 app.delete("/api/notes/:id", auth, (req, res) => {
-  deleteNote.run(req.params.id, req.user.id);
+  const id = req.params.id;
+  const permanent = String(req.query.permanent || "") === "1";
+  const existing = getNote.get(id, req.user.id);
+  if (!existing) return res.status(404).json({ error: "Note not found" });
+
+  if (permanent || !!existing.trashed) {
+    deleteNote.run(id, req.user.id);
+  } else {
+    moveToTrash.run(id, req.user.id);
+    updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+    broadcastNoteUpdated(id);
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/notes/trash", auth, (req, res) => {
+  const rows = listTrashedNotes.all(req.user.id);
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      content: r.content,
+      items: JSON.parse(r.items_json || "[]"),
+      tags: JSON.parse(r.tags_json || "[]"),
+      images: JSON.parse(r.images_json || "[]"),
+      color: r.color,
+      pinned: !!r.pinned,
+      position: r.position,
+      timestamp: r.timestamp,
+      created_at: r.created_at || r.timestamp,
+      updated_at: r.updated_at,
+      lastEditedBy: r.last_edited_by,
+      lastEditedAt: r.last_edited_at,
+      archived: !!r.archived,
+      trashed: !!r.trashed,
+    }))
+  );
+});
+
+app.post("/api/notes/:id/restore", auth, (req, res) => {
+  const id = req.params.id;
+  const existing = getNote.get(id, req.user.id);
+  if (!existing) return res.status(404).json({ error: "Note not found" });
+  restoreFromTrash.run(id, req.user.id);
+  updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+  broadcastNoteUpdated(id);
   res.json({ ok: true });
 });
 
@@ -857,6 +922,7 @@ app.get("/api/notes/collaborated", auth, (req, res) => {
       pinned: !!r.pinned,
       position: r.position,
       timestamp: r.timestamp,
+      created_at: r.created_at || r.timestamp,
       updated_at: r.updated_at,
       lastEditedBy: r.last_edited_by,
       lastEditedAt: r.last_edited_at,
@@ -909,6 +975,7 @@ app.get("/api/notes/archived", auth, (req, res) => {
       pinned: !!r.pinned,
       position: r.position,
       timestamp: r.timestamp,
+      created_at: r.created_at || r.timestamp,
       updated_at: r.updated_at,
       lastEditedBy: r.last_edited_by,
       lastEditedAt: r.last_edited_at,
@@ -937,6 +1004,7 @@ app.get("/api/notes/export", auth, (req, res) => {
       pinned: !!r.pinned,
       position: r.position,
       timestamp: r.timestamp,
+      created_at: r.created_at || r.timestamp,
     })),
   });
 });
@@ -970,6 +1038,8 @@ app.post("/api/notes/import", auth, (req, res) => {
         pinned: n.pinned ? 1 : 0,
         position: typeof n.position === "number" ? n.position : Date.now(),
         timestamp: n.timestamp || nowISO(),
+        created_at: n.created_at || n.timestamp || nowISO(),
+        updated_at: n.updated_at || nowISO(),
       });
     }
   });

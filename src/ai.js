@@ -5,6 +5,8 @@ import i18n from './i18n';
  * This calls the backend AI endpoint instead of running inference in the browser.
  */
 
+import i18n from './i18n';
+
 const API_BASE = "/api";
 const AUTH_KEY = "glass-keep-auth";
 
