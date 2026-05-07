@@ -3054,6 +3054,30 @@ function NotesUI({
         </div>
       </div >
 
+      {/* Mobile FAB: quick open composer */}
+      {isOnline && (
+        <button
+          type="button"
+          onClick={() => {
+            if (composerCollapsed) {
+              setComposerCollapsed(false);
+              setTimeout(() => {
+                try {
+                  titleRef.current?.focus();
+                } catch (e) { }
+              }, 80);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            } else {
+              setComposerCollapsed(true);
+            }
+          }}
+          aria-label={composerCollapsed ? "Crear nota" : "Cerrar creador"}
+          className="md:hidden fixed right-4 bottom-6 z-40 w-14 h-14 rounded-full bg-indigo-600 text-white text-3xl leading-none shadow-xl hover:bg-indigo-700 active:scale-95 transition-all"
+        >
+          {composerCollapsed ? "+" : "×"}
+        </button>
+      )}
+
       {/* Notes lists */}
       < main className="px-4 sm:px-6 md:px-8 lg:px-12 pb-12" >
         {
