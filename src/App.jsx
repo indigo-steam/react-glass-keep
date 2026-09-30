@@ -1793,9 +1793,19 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
 }
 
 /** ---------- Settings Panel ---------- */
-function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, showGenericConfirm, showToast, i18n, t }) {
+function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, assistantCreds, savingAssistant, onSaveAssistantCreds, onClearAssistantCreds, showGenericConfirm, showToast, i18n, t }) {
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
+  const [assistantFormOpen, setAssistantFormOpen] = useState(false);
+  const [assistantProvider, setAssistantProvider] = useState('openrouter');
+  const [assistantApiKey, setAssistantApiKey] = useState('');
+  const [assistantModel, setAssistantModel] = useState('');
+  const [assistantBaseUrl, setAssistantBaseUrl] = useState('');
   const currentLanguage = (i18n?.resolvedLanguage || i18n?.language || 'en').split('-')[0];
+
+  const inputClass = `mt-1 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${dark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 placeholder-gray-400'}`;
+  const btnPrimary = 'px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50';
+  const btnSecondary = `px-3 py-1.5 rounded-lg text-sm border ${dark ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600' : 'bg-white border-gray-300 hover:bg-gray-50'}`;
+  const btnDanger = 'px-3 py-1.5 rounded-lg text-sm border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20';
 
   const setLanguage = (language) => {
     if (!i18n) return;
@@ -1937,6 +1947,134 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
                       }`}
                   />
                 </button>
+              </div>
+
+              {/* Assistant BYOK: provider + API key */}
+              <div className="rounded-xl border border-[var(--border-light)] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{t('settings.assistantCreds')}</div>
+                    <div className="text-sm text-gray-500">
+                      {assistantCreds?.llm_key_last4
+                        ? t('settings.assistantConfiguredWith', {
+                            provider: assistantCreds.provider === 'custom' ? t('settings.assistantProviderCustom') : 'OpenRouter',
+                            model: assistantCreds.model || t('settings.assistantDefaultModel'),
+                            last4: assistantCreds.llm_key_last4,
+                          })
+                        : t('settings.assistantNotConfigured')}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {assistantCreds?.llm_key_last4 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssistantProvider(assistantCreds.provider === 'custom' ? 'custom' : 'openrouter');
+                            setAssistantModel(assistantCreds.model || '');
+                            setAssistantBaseUrl(assistantCreds.base_url || '');
+                            setAssistantApiKey('');
+                            setAssistantFormOpen(true);
+                          }}
+                          className={btnSecondary}
+                        >
+                          {t('settings.assistantChange')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => showGenericConfirm({
+                            title: t('confirm.removeAssistantTitle'),
+                            message: t('confirm.removeAssistantMessage'),
+                            confirmText: t('common.remove'),
+                            cancelText: t('common.cancel'),
+                            danger: true,
+                            onConfirm: async () => { await onClearAssistantCreds?.(); },
+                          })}
+                          className={btnDanger}
+                        >
+                          {t('settings.assistantRemove')}
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => setAssistantFormOpen(true)} className={btnPrimary}>
+                        {t('settings.assistantConfigure')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {assistantFormOpen && (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <label className="flex-1 text-sm">
+                        <span className="text-gray-500">{t('settings.assistantProvider')}</span>
+                        <select
+                          value={assistantProvider}
+                          onChange={(e) => setAssistantProvider(e.target.value)}
+                          className={inputClass}
+                        >
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="custom">{t('settings.assistantProviderCustom')}</option>
+                        </select>
+                      </label>
+                      <label className="flex-1 text-sm">
+                        <span className="text-gray-500">{t('settings.assistantModel')}</span>
+                        <input
+                          value={assistantModel}
+                          onChange={(e) => setAssistantModel(e.target.value)}
+                          placeholder="google/gemini-3-flash-preview"
+                          className={inputClass}
+                        />
+                      </label>
+                    </div>
+                    {assistantProvider === 'custom' && (
+                      <label className="block text-sm">
+                        <span className="text-gray-500">{t('settings.assistantBaseUrl')}</span>
+                        <input
+                          value={assistantBaseUrl}
+                          onChange={(e) => setAssistantBaseUrl(e.target.value)}
+                          placeholder="https://api.proveedor.com/v1"
+                          className={inputClass}
+                        />
+                      </label>
+                    )}
+                    <label className="block text-sm">
+                      <span className="text-gray-500">{t('settings.assistantApiKey')}</span>
+                      <input
+                        type="password"
+                        value={assistantApiKey}
+                        onChange={(e) => setAssistantApiKey(e.target.value)}
+                        placeholder={assistantCreds?.llm_key_last4 ? t('settings.assistantApiKeyKeep') : 'sk-…'}
+                        autoComplete="off"
+                        className={inputClass}
+                      />
+                    </label>
+                    <div className="flex items-center gap-2 justify-end">
+                      <button type="button" onClick={() => setAssistantFormOpen(false)} className={btnSecondary}>
+                        {t('common.cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingAssistant}
+                        onClick={async () => {
+                          const ok = await onSaveAssistantCreds?.({
+                            provider: assistantProvider,
+                            api_key: assistantApiKey,
+                            model: assistantModel,
+                            base_url: assistantBaseUrl,
+                          });
+                          if (ok) {
+                            setAssistantFormOpen(false);
+                            setAssistantApiKey('');
+                          }
+                        }}
+                        className={btnPrimary}
+                      >
+                        {savingAssistant ? t('settings.assistantSaving') : t('common.save')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between">
@@ -2408,7 +2546,7 @@ function NotesUI({
   // Settings panel
   openSettingsPanel,
   // AI props
-  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, t
+  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, onClearAiHistory, t
 }) {
   // Multi-select color popover (local UI state)
   const multiColorBtnRef = useRef(null);
@@ -2758,10 +2896,7 @@ function NotesUI({
                   onClick={() => {
                     setAiResponse(null);
                     setSearch('');
-                    setAiHistory([]);
-                    if (aiHistoryKey) {
-                      try { localStorage.setItem(aiHistoryKey, "[]"); } catch { /* ignore */ }
-                    }
+                    onClearAiHistory?.();
                   }}
                   className="ml-auto p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
                   title={t('ai.clearResponse')}
@@ -3387,14 +3522,22 @@ export default function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiLoadingProgress, setAiLoadingProgress] = useState(null);
 
+  // Assistant BYOK credentials (masked, server-side vault)
+  const [assistantCreds, setAssistantCreds] = useState(null);
+  const [savingAssistant, setSavingAssistant] = useState(false);
+
   // Assistant availability is server-side (per-user Hermes instance)
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
     (async () => {
       try {
-        const data = await api("/assistant/status", { token });
+        const [data, creds] = await Promise.all([
+          api("/assistant/status", { token }),
+          api("/assistant/credentials", { token }).catch(() => null),
+        ]);
         if (cancelled) return;
+        if (creds) setAssistantCreds(creds);
         if (data?.enabled && data?.configured) {
           let hidden = false;
           try { hidden = localStorage.getItem("localAiHidden") === "true"; } catch (e) { /* ignore */ }
@@ -3406,6 +3549,37 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [token]);
+
+  const saveAssistantCredentials = async (form) => {
+    setSavingAssistant(true);
+    try {
+      const data = await api("/assistant/credentials", { method: "PUT", token, body: form });
+      setAssistantCreds(data);
+      try { localStorage.removeItem("localAiHidden"); } catch (e) { /* ignore */ }
+      setLocalAiEnabled(true);
+      showToast(
+        data?.applied ? t('toast.assistantSaved') : t('toast.assistantSavedPending'),
+        data?.applied ? "success" : "info"
+      );
+      return true;
+    } catch (err) {
+      showToast(err?.message || t('toast.error'), "error");
+      return false;
+    } finally {
+      setSavingAssistant(false);
+    }
+  };
+
+  const clearAssistantCredentials = async () => {
+    try {
+      const data = await api("/assistant/credentials", { method: "DELETE", token });
+      setAssistantCreds(data);
+      setLocalAiEnabled(false);
+      showToast(t('toast.assistantRemoved'), "info");
+    } catch (err) {
+      showToast(err?.message || t('toast.error'), "error");
+    }
+  };
 
   // Session conversation history (per user, localStorage) so the assistant
   // remembers what was asked earlier. Server-side persistent memory: Fase 9.
@@ -6902,6 +7076,10 @@ export default function App() {
         setAlwaysShowSidebarOnWide={setAlwaysShowSidebarOnWide}
         localAiEnabled={localAiEnabled}
         setLocalAiEnabled={setLocalAiEnabled}
+        assistantCreds={assistantCreds}
+        savingAssistant={savingAssistant}
+        onSaveAssistantCreds={saveAssistantCredentials}
+        onClearAssistantCreds={clearAssistantCredentials}
         showGenericConfirm={showGenericConfirm}
         showToast={showToast}
         i18n={i18n}
@@ -6992,6 +7170,12 @@ export default function App() {
         isAiLoading={isAiLoading}
         aiLoadingProgress={aiLoadingProgress}
         onAiSearch={handleAiSearch}
+        onClearAiHistory={() => {
+          setAiHistory([]);
+          if (aiHistoryKey) {
+            try { localStorage.setItem(aiHistoryKey, "[]"); } catch (e) { /* ignore */ }
+          }
+        }}
         t={t}
         // formatting props
         formatComposer={formatComposer}

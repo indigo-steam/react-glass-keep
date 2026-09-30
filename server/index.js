@@ -1333,7 +1333,18 @@ app.put("/api/assistant/credentials", auth, async (req, res) => {
       : req.body?.provider === "openrouter"
         ? "openrouter"
         : null;
-  const apiKey = typeof req.body?.api_key === "string" ? req.body.api_key.trim() : "";
+  let apiKey = typeof req.body?.api_key === "string" ? req.body.api_key.trim() : "";
+  if (!apiKey) {
+    // Allow model/provider changes without re-entering the key
+    const existingRow = getUserSecrets.get(req.user.id);
+    if (existingRow?.llm_key_enc) {
+      try {
+        apiKey = decryptSecret(existingRow.llm_key_enc);
+      } catch {
+        apiKey = "";
+      }
+    }
+  }
   const baseUrl = typeof req.body?.base_url === "string" ? req.body.base_url.trim() : "";
   const model =
     typeof req.body?.model === "string" ? req.body.model.trim().slice(0, 120) : "";
@@ -1361,7 +1372,19 @@ app.put("/api/assistant/credentials", auth, async (req, res) => {
     updated_at: now,
   });
   ensureAssistantMcpKey(req.user.id);
-  res.json(publicCredentials(getUserSecrets.get(req.user.id)));
+  let applied = false;
+  try {
+    await wakerRequest(`/instances/${req.user.id}/llm`, "POST", {
+      provider,
+      api_key: apiKey,
+      model: model || "",
+      base_url: provider === "custom" ? baseUrl : "",
+    });
+    applied = true;
+  } catch (err) {
+    console.error("assistant apply llm error:", err.message);
+  }
+  res.json({ ...publicCredentials(getUserSecrets.get(req.user.id)), applied });
 });
 
 app.delete("/api/assistant/credentials", auth, (req, res) => {
@@ -1633,15 +1656,21 @@ function hermesBase(userId) {
   return HERMES_BASE_TEMPLATE.replace("{id}", String(userId));
 }
 
-async function wakerRequest(pathname, method = "POST") {
+async function wakerRequest(pathname, method = "POST", body = null) {
   if (!HERMES_WAKER_URL) throw new Error("HERMES_WAKER_URL no configurada");
+  const headers = { Authorization: `Bearer ${HERMES_WAKER_TOKEN}` };
+  if (body) headers["Content-Type"] = "application/json";
   const res = await fetch(`${HERMES_WAKER_URL}${pathname}`, {
     method,
-    headers: { Authorization: `Bearer ${HERMES_WAKER_TOKEN}` },
-    signal: AbortSignal.timeout(15000),
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(45000),
   });
-  if (!res.ok) throw new Error(`waker HTTP ${res.status}`);
-  return res.json().catch(() => ({}));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(`waker HTTP ${res.status}${data?.error ? `: ${data.error}` : ""}`);
+  }
+  return data;
 }
 
 async function hermesHealthy(userId, timeoutMs = 2000) {
