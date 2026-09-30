@@ -3378,6 +3378,26 @@ export default function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiLoadingProgress, setAiLoadingProgress] = useState(null);
 
+  // Assistant availability is server-side (per-user Hermes instance)
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api("/assistant/status", { token });
+        if (cancelled) return;
+        if (data?.enabled && data?.configured) {
+          let stored = null;
+          try { stored = localStorage.getItem("localAiEnabled"); } catch (e) { /* ignore */ }
+          if (stored === null) setLocalAiEnabled(true);
+        } else {
+          setLocalAiEnabled(false);
+        }
+      } catch (e) { /* keep current default */ }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
   // Composer
   const [composerType, setComposerType] = useState("text");
   const [title, setTitle] = useState("");
@@ -3926,13 +3946,13 @@ export default function App() {
 
     try {
       const answer = await askAI(question, notes, (progress) => {
-        if (progress.status === 'progress') {
-          setAiLoadingProgress(progress.progress);
+        if (progress.status === 'delta') {
+          setAiResponse(progress.text);
         } else if (progress.status === 'ready') {
           setAiLoadingProgress(100);
         }
       });
-      setAiResponse(answer);
+      setAiResponse((prev) => answer || prev);
     } catch (err) {
       console.error("AI Error:", err);
       setAiResponse(t('ai.errorResponse'));

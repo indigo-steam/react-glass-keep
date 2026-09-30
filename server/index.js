@@ -21,37 +21,6 @@ if (process.env.NODE_ENV !== "production") {
 const { rateLimit } = require("express-rate-limit");
 const helmet = require("helmet");
 
-// Transformers.js for server-side AI
-let pipeline;
-let env;
-let aiGenerator = null;
-
-async function initServerAI() {
-  if (aiGenerator) return;
-  try {
-    // Dynamic import since transformers is ESM and this is CJS
-    const transformers = await import('@huggingface/transformers');
-    pipeline = transformers.pipeline;
-    env = transformers.env;
-
-    // Configure env for server
-    env.allowLocalModels = false;
-    // Cache directory in Docker
-    env.cacheDir = path.join(__dirname, '..', 'data', 'ai-cache');
-
-    console.log("Loading high-stability AI model (Llama-3.2-1B)...");
-    // Llama-3.2-1B-Instruct-ONNX is highly compatible and excels at instruction following
-    aiGenerator = await pipeline('text-generation', 'onnx-community/Llama-3.2-1B-Instruct-ONNX', {
-      dtype: 'q4', // 4-bit quantization (~0.7GB RAM)
-    });
-    console.log("Llama AI model loaded on server.");
-  } catch (err) {
-    console.error("Failed to load AI on server:", err);
-  }
-}
-// Start loading AI in background (disabled by default - will load on first use)
-// initServerAI().catch(console.error);
-
 const app = express();
 app.set("trust proxy", 1); // behind nginx reverse proxy (notes.indigosteam.com)
 
@@ -211,6 +180,7 @@ CREATE TABLE IF NOT EXISTS user_secrets (
   llm_key_enc TEXT,                -- AES-256-GCM payload (iv.tag.data, base64)
   mcp_key_enc TEXT,                -- assistant MCP credential (encrypted, for provisioning)
   mcp_key_prefix TEXT,             -- display
+  hermes_key_enc TEXT,             -- Hermes API server bearer key (encrypted)
   created_at TEXT,
   updated_at TEXT,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -268,6 +238,18 @@ CREATE TABLE IF NOT EXISTS user_secrets (
     tx();
   } catch {
     // ignore if ALTER not supported or already applied
+  }
+})();
+
+// user_secrets migrations (assistant credentials)
+(function ensureUserSecretsColumns() {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(user_secrets)`).all();
+    if (cols.length && !cols.some((c) => c.name === "hermes_key_enc")) {
+      db.exec(`ALTER TABLE user_secrets ADD COLUMN hermes_key_enc TEXT`);
+    }
+  } catch {
+    // ignore if table not created yet or ALTER not supported
   }
 })();
 
@@ -1636,88 +1618,191 @@ app.patch("/api/admin/users/:id", auth, adminOnly, (req, res) => {
 });
 
 
-// ---------- AI Assistant (Server side) ----------
-// Check AI status
-app.get("/api/ai/status", auth, (req, res) => {
+// ---------- Assistant (chat via per-user Hermes) ----------
+// Each user has their own Hermes container (single-tenant). A host-side waker
+// service starts/stops containers on demand; idle instances are stopped after
+// ASSISTANT_IDLE_MINUTES to keep VPS memory usage low.
+const HERMES_BASE_TEMPLATE = process.env.HERMES_BASE_TEMPLATE || "http://hermes-u{id}:8642";
+const HERMES_WAKER_URL = (process.env.HERMES_WAKER_URL || "").replace(/\/+$/, "");
+const HERMES_WAKER_TOKEN = process.env.HERMES_WAKER_TOKEN || "";
+const ASSISTANT_IDLE_MS = Math.max(0, Number(process.env.ASSISTANT_IDLE_MINUTES || 15)) * 60 * 1000;
+const ASSISTANT_MAX_MESSAGES = 60;
+const ASSISTANT_MAX_CHARS = 40000;
+
+function hermesBase(userId) {
+  return HERMES_BASE_TEMPLATE.replace("{id}", String(userId));
+}
+
+async function wakerRequest(pathname, method = "POST") {
+  if (!HERMES_WAKER_URL) throw new Error("HERMES_WAKER_URL no configurada");
+  const res = await fetch(`${HERMES_WAKER_URL}${pathname}`, {
+    method,
+    headers: { Authorization: `Bearer ${HERMES_WAKER_TOKEN}` },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`waker HTTP ${res.status}`);
+  return res.json().catch(() => ({}));
+}
+
+async function hermesHealthy(userId, timeoutMs = 2000) {
+  try {
+    const res = await fetch(`${hermesBase(userId)}/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureHermesRunning(userId) {
+  if (await hermesHealthy(userId)) return true;
+  try {
+    await wakerRequest(`/instances/${userId}/start`);
+  } catch (err) {
+    console.error("assistant waker start error:", err.message);
+  }
+  const deadline = Date.now() + 45000;
+  while (Date.now() < deadline) {
+    if (await hermesHealthy(userId)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return false;
+}
+
+const assistantLastActivity = new Map();
+if (ASSISTANT_IDLE_MS > 0 && HERMES_WAKER_URL) {
+  const checkInterval = Math.min(ASSISTANT_IDLE_MS, 60000);
+  const idleTimer = setInterval(() => {
+    const cutoff = Date.now() - ASSISTANT_IDLE_MS;
+    for (const [userId, lastAt] of assistantLastActivity.entries()) {
+      if (lastAt < cutoff) {
+        assistantLastActivity.delete(userId);
+        wakerRequest(`/instances/${userId}/stop`).catch(() => {});
+      }
+    }
+  }, checkInterval);
+  if (idleTimer.unref) idleTimer.unref();
+}
+
+const assistantChatLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req) => `u${req.user?.id ?? "anon"}`,
+  message: { error: "Demasiadas solicitudes al asistente. Probá de nuevo en unos minutos." },
+});
+
+app.get("/api/assistant/status", auth, (req, res) => {
+  const row = getUserSecrets.get(req.user.id);
   res.json({
-    initialized: !!aiGenerator,
-    modelSize: "~700MB",
-    modelName: "Llama-3.2-1B-Instruct-ONNX"
+    enabled: vaultReady,
+    configured: !!(row && row.llm_key_enc && row.hermes_key_enc),
+    provider: row?.llm_provider || null,
+    model: row?.llm_model || null,
   });
 });
 
-// Initialize AI (on-demand)
-app.post("/api/ai/initialize", auth, async (req, res) => {
-  try {
-    if (aiGenerator) {
-      return res.json({ ok: true, message: "AI already initialized" });
-    }
-
-    await initServerAI();
-
-    if (!aiGenerator) {
-      return res.status(500).json({ error: "Failed to initialize AI model" });
-    }
-
-    res.json({ ok: true, message: "AI initialized successfully" });
-  } catch (err) {
-    console.error("AI initialization error:", err);
-    res.status(500).json({ error: "Failed to initialize AI model" });
+app.post("/api/assistant/chat", auth, assistantChatLimiter, async (req, res) => {
+  if (req.apiKey) {
+    return res.status(403).json({ error: "Usá una sesión de la app para el asistente." });
   }
-});
-
-app.post("/api/ai/ask", auth, async (req, res) => {
-  const { question, notes } = req.body || {};
-  if (!question) return res.status(400).json({ error: "Missing question" });
-
-  try {
-    if (!aiGenerator) {
-      // Try to init if not ready
-      await initServerAI();
-      if (!aiGenerator) {
-        return res.status(503).json({ error: "AI Assistant is still initializing or failed to load." });
-      }
-    }
-
-    // Limit context strictly - better search logic
-    const relevantNotes = (notes || []).filter(n => {
-      const q = question.toLowerCase().replace(/[^\w\s]/g, ' '); // Strip punctuation for searching
-      const words = q.split(/\s+/).filter(w => w.length >= 2); // At least 2 chars
-      const t = (n.title || "").toLowerCase();
-      const c = (n.content || "").toLowerCase();
-
-      return words.some(word => t.includes(word) || c.includes(word) || word.includes(t) && t.length > 2);
-    }).slice(0, 5); // Take up to 5 relevant notes
-
-    const notesToUse = relevantNotes.length > 0 ? relevantNotes : (notes || []).slice(0, 4);
-    const context = notesToUse
-      .map(n => `TITLE: ${n.title}\nCONTENT: ${n.content.substring(0, 1500)}`)
-      .join('\n\n---\n\n');
-
-    const prompt = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are a private assistant for the Indigo Notes app.
-Use ONLY the provided Note Context to answer the user. 
-If the answer is not in the notes, say "I couldn't find any information about that in your notes."
-Be direct, helpful, and concise.
-
-Note Context:
-${context}<|eot_id|><|start_header_id|>user<|end_header_id|>
-${question}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-`;
-
-    const output = await aiGenerator(prompt, {
-      max_new_tokens: 300,
-      temperature: 0.1,
-      repetition_penalty: 1.1,
-      do_sample: false,
-      return_full_text: false,
+  if (!vaultReady) {
+    return res.status(503).json({ error: "El asistente no está configurado en el servidor." });
+  }
+  const row = getUserSecrets.get(req.user.id);
+  if (!row?.llm_key_enc) {
+    return res.status(409).json({
+      error: "Configurá tu API key del asistente para empezar a usarlo.",
+      code: "llm_key_missing",
     });
-
-    res.json({ answer: output[0].generated_text.trim() });
-  } catch (err) {
-    console.error("Server AI Error:", err);
-    res.status(500).json({ error: "AI processing failed on server." });
   }
+  if (!row?.hermes_key_enc) {
+    return res.status(409).json({
+      error: "El asistente todavía no está habilitado para tu cuenta.",
+      code: "assistant_not_provisioned",
+    });
+  }
+  const messages = Array.isArray(req.body?.messages) ? req.body.messages : null;
+  if (!messages || messages.length === 0) {
+    return res.status(400).json({ error: "Faltan mensajes." });
+  }
+  if (messages.length > ASSISTANT_MAX_MESSAGES) {
+    return res.status(400).json({ error: "La conversación es demasiado larga." });
+  }
+  let totalChars = 0;
+  const clean = messages.map((m) => {
+    const role = m?.role === "assistant" ? "assistant" : m?.role === "system" ? "system" : "user";
+    const content = typeof m?.content === "string" ? m.content : "";
+    totalChars += content.length;
+    return { role, content };
+  });
+  if (totalChars > ASSISTANT_MAX_CHARS) {
+    return res.status(400).json({ error: "El contexto enviado es demasiado grande." });
+  }
+  if (clean[clean.length - 1].role !== "user") {
+    return res.status(400).json({ error: "El último mensaje debe ser del usuario." });
+  }
+
+  const running = await ensureHermesRunning(req.user.id);
+  if (!running) {
+    return res.status(503).json({ error: "El asistente no está disponible en este momento." });
+  }
+
+  let hermesKey;
+  try {
+    hermesKey = decryptSecret(row.hermes_key_enc);
+  } catch {
+    return res.status(503).json({ error: "La credencial del asistente es inválida." });
+  }
+
+  assistantLastActivity.set(req.user.id, Date.now());
+
+  const controller = new AbortController();
+  req.on("close", () => controller.abort());
+
+  let upstream;
+  try {
+    upstream = await fetch(`${hermesBase(req.user.id)}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${hermesKey}`,
+      },
+      body: JSON.stringify({ model: "hermes-agent", stream: true, messages: clean }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (!controller.signal.aborted) {
+      console.error("assistant upstream error:", err.message);
+    }
+    return res.status(502).json({ error: "No se pudo contactar al asistente." });
+  }
+  if (!upstream.ok || !upstream.body) {
+    return res.status(502).json({ error: "El asistente devolvió un error." });
+  }
+
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  try {
+    res.setHeader("X-Accel-Buffering", "no");
+  } catch {
+    /* headers already flushed */
+  }
+  if (res.flushHeaders) res.flushHeaders();
+
+  try {
+    for await (const chunk of upstream.body) {
+      if (controller.signal.aborted) break;
+      res.write(chunk);
+    }
+  } catch {
+    /* upstream ended or client aborted */
+  }
+  res.end();
 });
 
 // ---------- Health ----------
