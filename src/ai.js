@@ -27,19 +27,25 @@ export async function initAI(onProgress) {
 
 /**
  * Ask the assistant a question. The agent searches the user's notes by itself
- * (GlassKeep MCP), so we only send the question.
+ * (GlassKeep MCP), so we only send the question plus the session history.
  * @param {string} question
  * @param {Array} _notes  (deprecated: kept for backward compatibility)
  * @param {Function} onProgress  receives {status:'init'|'delta'|'ready', text?}
+ * @param {Array} history  previous turns [{role:'user'|'assistant', content}]
  * @returns {Promise<string>} the assistant's answer
  */
-export async function askAI(question, _notes, onProgress) {
+export async function askAI(question, _notes, onProgress, history = []) {
   const token = getAuthToken();
   if (!token) {
     throw new Error(i18n.t('errors.aiLoginRequired'));
   }
 
   if (onProgress) onProgress({ status: 'init' });
+
+  const messages = [
+    ...(Array.isArray(history) ? history : []),
+    { role: 'user', content: question }
+  ];
 
   let response;
   try {
@@ -49,7 +55,7 @@ export async function askAI(question, _notes, onProgress) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ messages: [{ role: 'user', content: question }] })
+      body: JSON.stringify({ messages })
     });
   } catch {
     throw new Error(i18n.t('errors.serverResponded', { status: 'network' }));

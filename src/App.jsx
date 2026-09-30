@@ -2755,7 +2755,14 @@ function NotesUI({
               <h3 className="font-semibold text-indigo-700 dark:text-indigo-300">{t('ai.assistant')}</h3>
               {aiResponse && !isAiLoading && (
                 <button
-                  onClick={() => { setAiResponse(null); setSearch(''); }}
+                  onClick={() => {
+                    setAiResponse(null);
+                    setSearch('');
+                    setAiHistory([]);
+                    if (aiHistoryKey) {
+                      try { localStorage.setItem(aiHistoryKey, "[]"); } catch { /* ignore */ }
+                    }
+                  }}
                   className="ml-auto p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
                   title={t('ai.clearResponse')}
                 >
@@ -3400,6 +3407,23 @@ export default function App() {
     return () => { cancelled = true; };
   }, [token]);
 
+  // Session conversation history (per user, localStorage) so the assistant
+  // remembers what was asked earlier. Server-side persistent memory: Fase 9.
+  const aiHistoryKey = currentUser?.id ? `assistantHistory-${currentUser.id}` : null;
+  const [aiHistory, setAiHistory] = useState([]);
+  useEffect(() => {
+    if (!aiHistoryKey) {
+      setAiHistory([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(aiHistoryKey);
+      setAiHistory(raw ? JSON.parse(raw) : []);
+    } catch {
+      setAiHistory([]);
+    }
+  }, [aiHistoryKey]);
+
   // Composer
   const [composerType, setComposerType] = useState("text");
   const [title, setTitle] = useState("");
@@ -3947,13 +3971,23 @@ export default function App() {
     setAiLoadingProgress(0);
 
     try {
+      const history = aiHistory.slice(-20);
       const answer = await askAI(question, notes, (progress) => {
         if (progress.status === 'delta') {
           setAiResponse(progress.text);
         } else if (progress.status === 'ready') {
           setAiLoadingProgress(100);
         }
-      });
+      }, history);
+      const nextHistory = [
+        ...history,
+        { role: 'user', content: question },
+        { role: 'assistant', content: answer }
+      ].slice(-20);
+      setAiHistory(nextHistory);
+      if (aiHistoryKey) {
+        try { localStorage.setItem(aiHistoryKey, JSON.stringify(nextHistory)); } catch { /* ignore */ }
+      }
       setAiResponse((prev) => answer || prev);
     } catch (err) {
       console.error("AI Error:", err);
