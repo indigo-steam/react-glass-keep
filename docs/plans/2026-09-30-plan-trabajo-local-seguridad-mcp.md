@@ -379,7 +379,7 @@ Fase 7 (provisioning por usuario).
   - [ ] Pegar API key del LLM (OpenRouter o endpoint custom), validarla y guardarla (vía Fase 6).
   - [ ] Mostrar enmascarada + proveedor/modelo; rotar/revocar.
   - [ ] Estado del asistente (sin key / listo / instancia arrancando).
-- [ ] Historial de conversación: `localStorage` por usuario en esta fase (Fase 9 lo mueve a la DB).
+- [x] Historial de conversación: `localStorage` por usuario en esta fase (Fase 9 lo mueve a la DB). **Adelantado el 2026-09-30** (junto con Fase 7): `assistantHistory-<userId>` guarda los últimos 20 mensajes; se envían en cada request y el botón "limpiar respuesta" resetea el hilo.
 - [ ] Manejo de errores: 401 con el flujo `auth-expired` (`src/App.jsx:4450-4476`), 409 sin key (CTA), timeouts y reintento.
 - [ ] Claves i18n en `src/locales/en.json` y `es.json`.
 - [ ] Prueba en móvil (PWA) y escritorio.
