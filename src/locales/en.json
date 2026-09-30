@@ -231,7 +231,9 @@
     "assistant": "AI Assistant",
     "clearResponse": "Clear response",
     "thinking": "AI Assistant is thinking...",
-    "errorResponse": "Sorry, I encountered an error while processing your request."
+    "errorResponse": "Sorry, I encountered an error while processing your request.",
+    "enableMode": "Enable AI mode",
+    "disableMode": "Disable AI mode"
   },
   "composer": {
     "addItem": "Add",

@@ -2546,7 +2546,7 @@ function NotesUI({
   // Settings panel
   openSettingsPanel,
   // AI props
-  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, onClearAiHistory, t
+  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, onClearAiHistory, assistantAvailable, onToggleAiMode, t
 }) {
   // Multi-select color popover (local UI state)
   const multiColorBtnRef = useRef(null);
@@ -2686,11 +2686,27 @@ function NotesUI({
 
         <div className="flex-grow flex justify-center px-4 sm:px-8">
           <div className="relative w-full max-w-lg">
+            {/* AI mode toggle (always visible when the assistant is available) */}
+            {assistantAvailable && (
+              <button
+                type="button"
+                title={localAiEnabled ? t('ai.disableMode') : t('ai.enableMode')}
+                aria-label={localAiEnabled ? t('ai.disableMode') : t('ai.enableMode')}
+                aria-pressed={localAiEnabled}
+                onClick={() => onToggleAiMode?.()}
+                className={`absolute left-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full flex items-center justify-center transition-colors ${localAiEnabled
+                  ? 'text-indigo-600 bg-indigo-600/10'
+                  : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-600/10'}`}
+              >
+                <Sparkles />
+              </button>
+            )}
             <input
               type="text"
               name="notes-search"
+              enterKeyHint="search"
               placeholder={localAiEnabled ? t('notes.searchAiPlaceholder') : t('notes.searchPlaceholder')}
-              className={`w-full bg-transparent border border-[var(--border-light)] rounded-lg pl-4 ${localAiEnabled ? 'pr-14' : 'pr-8'} py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400`}
+              className={`w-full bg-transparent border border-[var(--border-light)] rounded-lg ${assistantAvailable ? 'pl-11' : 'pl-4'} ${localAiEnabled ? 'pr-16' : 'pr-10'} py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
@@ -2704,7 +2720,8 @@ function NotesUI({
                 <button
                   type="button"
                   title={t('ai.ask')}
-                  className="h-7 w-7 rounded-full flex items-center justify-center text-indigo-600 hover:bg-indigo-600/10 transition-colors"
+                  aria-label={t('ai.ask')}
+                  className="h-9 w-9 rounded-full flex items-center justify-center text-indigo-600 hover:bg-indigo-600/10 transition-colors"
                   onClick={() => onAiSearch?.(search)}
                 >
                   <Sparkles />
@@ -2714,7 +2731,7 @@ function NotesUI({
                 <button
                   type="button"
                   aria-label={t('search.clear')}
-                  className="h-6 w-6 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                  className="h-8 w-8 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
                   onClick={() => setSearch("")}
                 >
                   ×
@@ -3525,6 +3542,7 @@ export default function App() {
   // Assistant BYOK credentials (masked, server-side vault)
   const [assistantCreds, setAssistantCreds] = useState(null);
   const [savingAssistant, setSavingAssistant] = useState(false);
+  const [assistantAvailable, setAssistantAvailable] = useState(false);
 
   // Assistant availability is server-side (per-user Hermes instance)
   useEffect(() => {
@@ -3538,7 +3556,9 @@ export default function App() {
         ]);
         if (cancelled) return;
         if (creds) setAssistantCreds(creds);
-        if (data?.enabled && data?.configured) {
+        const available = !!(data?.enabled && data?.configured);
+        setAssistantAvailable(available);
+        if (available) {
           let hidden = false;
           try { hidden = localStorage.getItem("localAiHidden") === "true"; } catch (e) { /* ignore */ }
           if (!hidden) setLocalAiEnabled(true);
@@ -3549,6 +3569,17 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [token]);
+
+  const toggleAiMode = () => {
+    if (localAiEnabled) {
+      try { localStorage.setItem("localAiHidden", "true"); } catch (e) { /* ignore */ }
+      setLocalAiEnabled(false);
+      setAiResponse(null);
+    } else {
+      try { localStorage.removeItem("localAiHidden"); } catch (e) { /* ignore */ }
+      setLocalAiEnabled(true);
+    }
+  };
 
   const saveAssistantCredentials = async (form) => {
     setSavingAssistant(true);
@@ -4139,7 +4170,7 @@ export default function App() {
 
   // Load notes
   const handleAiSearch = async (question) => {
-    if (!question || question.trim().length < 3) return;
+    if (!question || !question.trim()) return;
     setIsAiLoading(true);
     setAiResponse(null);
     setAiLoadingProgress(0);
@@ -7176,6 +7207,8 @@ export default function App() {
             try { localStorage.setItem(aiHistoryKey, "[]"); } catch (e) { /* ignore */ }
           }
         }}
+        assistantAvailable={assistantAvailable}
+        onToggleAiMode={toggleAiMode}
         t={t}
         // formatting props
         formatComposer={formatComposer}

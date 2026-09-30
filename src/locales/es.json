@@ -231,7 +231,9 @@
     "assistant": "Asistente de IA",
     "clearResponse": "Limpiar respuesta",
     "thinking": "El asistente de IA está pensando...",
-    "errorResponse": "Lo siento, encontré un error al procesar tu solicitud."
+    "errorResponse": "Lo siento, encontré un error al procesar tu solicitud.",
+    "enableMode": "Activar modo IA",
+    "disableMode": "Desactivar modo IA"
   },
   "composer": {
     "addItem": "Agregar",
