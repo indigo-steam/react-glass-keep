@@ -305,30 +305,38 @@ Fase 7 (provisioning por usuario).
 ## 8. Fase 6 — MCP escritura + credenciales del asistente (rama `feat/mcp-write`)
 
 ### 8.1 MCP escritura
-- [ ] Herramientas:
-  - [ ] `create_note(title, content?, tags?, type?, items?)` → `POST /api/notes`
-  - [ ] `update_note(id, cambios)` → `PATCH /api/notes/:id` (nunca `PUT`; siempre leer antes de escribir)
-  - [ ] `archive_note(id, archived)` → `POST /api/notes/:id/archive`
-  - [ ] `restore_note(id)` → `POST /api/notes/:id/restore`
-  - [ ] `delete_note(id, confirm:true)` → `DELETE /api/notes/:id` (jamás `permanent=1`)
-- [ ] Decidir identidad/auditoría del agente (hoy `last_edited_by` es texto libre,
-  `server/index.js:690`): usuario bot colaborador **o** marcador `"Asistente"`.
-- [ ] Confirmación obligatoria para operaciones destructivas (diálogo en UI o flag `confirm`).
-- [ ] Pruebas de aislamiento: token del usuario A no puede leer/editar notas del usuario B (salvo colaboración explícita).
+- [x] Herramientas:
+  - [x] `create_note(title, content?, tags?, type?, items?)` → `POST /api/notes`
+  - [x] `update_note(id, cambios)` → `PATCH /api/notes/:id` (nunca `PUT`; siempre leer antes de escribir)
+  - [x] `archive_note(id, archived)` → `POST /api/notes/:id/archive`
+  - [x] `restore_note(id)` → `POST /api/notes/:id/restore`
+  - [x] `delete_note(id, confirm:true)` → `DELETE /api/notes/:id` (jamás `permanent=1`)
+- [x] Decidir identidad/auditoría del agente (hoy `last_edited_by` es texto libre,
+  `server/index.js:690`): usuario bot colaborador **o** marcador `"Asistente"`. → header `X-Edited-By`, default `"Asistente"`.
+- [x] Confirmación obligatoria para operaciones destructivas (diálogo en UI o flag `confirm`).
+- [x] Pruebas de aislamiento: token del usuario A no puede leer/editar notas del usuario B (salvo colaboración explícita).
 
 ### 8.2 Credenciales por usuario (BYOK + MCP del asistente)
-- [ ] **Ajuste de regla de oro**: los cambios de esquema llegan en esta fase (migraciones idempotentes estilo `server/index.js`), no en Fase 9.
-- [ ] Tabla `user_secrets` (cifrado AES-256-GCM con `SECRETS_MASTER_KEY` en env del contenedor web):
-  - [ ] API key LLM del usuario (BYOK) + proveedor/modelo/base URL opcional.
-  - [ ] Credencial MCP del asistente generada por el servidor (revocable), inyectada al provisionar su instancia Hermes.
-- [ ] Endpoints (auth JWT):
-  - [ ] `GET /api/assistant/credentials` → estado enmascarado (proveedor, `••••last4`, modelo).
-  - [ ] `PUT /api/assistant/credentials` → guardar/validar (test call al provider antes de aceptar).
-  - [ ] `DELETE /api/assistant/credentials` → revocar.
-  - [ ] `POST /api/api-keys` (para agentes externos BYO): hasheada, scopes read/write, revocable.
-- [ ] Validación para OpenRouter + endpoints custom OpenAI-compatible (los dos soportados).
+- [x] **Ajuste de regla de oro**: los cambios de esquema llegan en esta fase (migraciones idempotentes estilo `server/index.js`), no en Fase 9.
+- [x] Tabla `user_secrets` (cifrado AES-256-GCM con `SECRETS_MASTER_KEY` en env del contenedor web):
+  - [x] API key LLM del usuario (BYOK) + proveedor/modelo/base URL opcional.
+  - [x] Credencial MCP del asistente generada por el servidor (revocable), inyectada al provisionar su instancia Hermes.
+- [x] Endpoints (auth JWT):
+  - [x] `GET /api/assistant/credentials` → estado enmascarado (proveedor, `••••last4`, modelo).
+  - [x] `PUT /api/assistant/credentials` → guardar/validar (test call al provider antes de aceptar).
+  - [x] `DELETE /api/assistant/credentials` → revocar.
+  - [x] `POST /api/api-keys` (para agentes externos BYO): hasheada, scopes read/write, revocable.
+- [x] Validación para OpenRouter + endpoints custom OpenAI-compatible (los dos soportados).
 
-**Criterio de hecho**: ninguna credencial en claro fuera del vault; el asistente de cada usuario usa su propia key y su propia credencial MCP.
+**✅ Completada el 2026-09-30** — commits `9e2dcc0`, `09e5761`, `7f1ba3f`; imagen `indigo-notes:mcp-write-20260930`; backup previo `notes-20260930-100148.db`. Notas:
+- Migración: tablas `api_keys` y `user_secrets` (idempotentes); `SECRETS_MASTER_KEY` agregada al env-file de producción.
+- Auth extendida: Bearer `gk_...` con scopes (`read` no puede escribir → 403), revocación inmediata (401), `last_used_at`, y `X-Edited-By` para auditoría (`lastEditedBy` = "Asistente" verificado).
+- MCP: **9 tools** (4 lectura + 5 escritura), alias `queries` (el modelo lo intentaba y fallaba), `GLASSKEEP_API_KEY` soportada, errores de API con detalle.
+- Smoke local **23/23** (incluye escritura, archivado, confirmación de borrado y aislamiento A↔B en lectura/escritura/borrado).
+- Swap en producción: la credencial del asistente pasó del JWT temporal a una **API key gestionada** (`gk_...`, scope write, cifrada en el vault) inyectada en `hermes-u1`; verificado end-to-end: el asistente creó "Revisar servidor mañana" (tag `tareas`) con auditoría `Asistente`, y la nota de prueba fue eliminada por el operador.
+- La OpenRouter key quedó en el vault (BYOK) validada contra la API real; hermes-u1 conserva su copia en `.env` hasta que Fase 7 la inyecte desde el vault. La UI de configuración llega en Fase 8.
+
+**Criterio de hecho**: "Créame una nota para revisar el servidor mañana" crea una nota visible en la web. → ✅ verificado en producción.
 
 ---
 
