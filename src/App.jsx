@@ -4,11 +4,19 @@ import { useTranslation } from "react-i18next";
 import i18nCore from "./i18n";
 import { askAI } from "./ai";
 import { marked as markedParser } from "marked";
+import DOMPurify from "dompurify";
 import DrawingCanvas from "./DrawingCanvas";
 
 // Ensure we can call marked.parse(...)
 const marked =
   typeof markedParser === "function" ? { parse: markedParser } : markedParser;
+
+// Sanitize rendered markdown before injecting it as HTML (prevents stored XSS)
+const renderMarkdown = (md) =>
+  DOMPurify.sanitize(marked.parse(md || ""), {
+    USE_PROFILES: { html: true },
+    ADD_DATA_URI_TAGS: ["img"],
+  });
 
 /** ---------- API Helpers ---------- */
 const API_BASE = "/api";
@@ -375,7 +383,7 @@ const PinIcon = () => (
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const mdToPlain = (md) => {
   try {
-    const html = marked.parse(md || "");
+    const html = renderMarkdown(md);
     const tmp = document.createElement("div");
     tmp.innerHTML = html;
     const text = tmp.textContent || tmp.innerText || "";
@@ -2762,7 +2770,7 @@ function NotesUI({
               ) : (
                 <div
                   className="text-gray-800 dark:text-gray-200 note-content"
-                  dangerouslySetInnerHTML={{ __html: marked.parse(aiResponse || "") }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(aiResponse) }}
                 />
               )}
             </div>
@@ -4067,6 +4075,8 @@ export default function App() {
     const connectSSE = () => {
       try {
         const url = new URL(`${window.location.origin}/api/events`);
+        // TODO(S5): JWT viaja en query string (visible en logs de nginx/proxy).
+        // Migrar a cookie HttpOnly o ticket de un solo uso (plan fase 2, §4.4).
         url.searchParams.set("token", token);
         url.searchParams.set("_t", Date.now()); // Cache buster for PWA
         es = new EventSource(url.toString());
@@ -5984,7 +5994,7 @@ export default function App() {
                   <div
                     ref={noteViewRef}
                     className="note-content note-content--dense whitespace-pre-wrap"
-                    dangerouslySetInnerHTML={{ __html: marked.parse(mBody || "") }}
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(mBody) }}
                   />
                 ) : (
                   <div className="relative min-h-[160px]">
