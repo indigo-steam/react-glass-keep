@@ -233,20 +233,28 @@ pueden volver a loguearse.
 **Objetivo**: primer MCP contra la API existente. **Sin cambios de base de datos.**
 Puede construirse contra `GET /api/notes` sin tocar el backend.
 
-- [ ] Crear carpeta `mcp/` con su `package.json` (no mezclar con el frontend).
-- [ ] Decorar herramientas mínimas:
-  - [ ] `search_notes(query?, tags?[], include_archived?, limit=20)`
-  - [ ] `get_note(id)`
-  - [ ] `list_tags()`
-  - [ ] `get_context(note_id?, query?, max_notes=10)`
-- [ ] Credencial del MCP: por ahora `POST /api/login/secret` (existe) para obtener
+- [x] Crear carpeta `mcp/` con su `package.json` (no mezclar con el frontend).
+- [x] Decorar herramientas mínimas:
+  - [x] `search_notes(query?, tags?[], include_archived?, limit=20)`
+  - [x] `get_note(id)`
+  - [x] `list_tags()`
+  - [x] `get_context(note_id?, query?, max_notes=10)`
+- [x] Credencial del MCP: por ahora `POST /api/login/secret` (existe) para obtener
   JWT; documentar que en Fase 6 se añadirá `POST /api/api-keys` por usuario.
-- [ ] Probar con MCP Inspector: buscar "moto", "Fintrak", "SENA" y verificar que
+  (También soporta `GLASSKEEP_TOKEN` para pruebas; documentado en `mcp/README.md`.)
+- [x] Probar con MCP Inspector: buscar "moto", "Fintrak", "SENA" y verificar que
   devuelve solo notas del usuario autenticado.
 - [ ] Opcional backend (mejora, no bloqueante): `GET /api/notes/:id` y
-  `GET /api/notes?tag=` para evitar traer todo.
+  `GET /api/notes?tag=` para evitar traer todo. **Pospuesto**: con 260 notas el
+  filtrado client-side del MCP es suficiente; anotado como mejora futura.
 
-**Criterio de hecho**: el MCP lista y lee notas reales sin acceso a SQLite y sin ver datos de otro usuario.
+**✅ Completada el 2026-09-30** — commit `0db4af0`, SDK `@modelcontextprotocol/sdk@1.31.0` + `zod@3.25`. Notas:
+- Herramientas solo-lectura: `GET /api/notes` + `GET /api/notes/archived`; nunca SQLite ni token admin. Data URLs de imágenes se reemplazan por marcador para no inflar el contexto.
+- Smoke test propio autocontenido (`mcp/test/smoke.mjs`, `npm run smoke`): siembra dos usuarios, y verifica herramientas, tags case-insensitive y aislamiento A↔B. **12/12 ok**.
+- Inspector CLI verificado (`tools/list` y `tools/call`). Ojo: el Inspector no hereda variables arbitrarias del entorno; hay que lanzarlo como `--cli env KEY=VAL node index.js`.
+- Prueba con datos reales en producción: búsquedas "moto" (7), "Fintrak" (20) y "SENA" (20) contra `https://notes.indigosteam.com` usando un JWT temporal de 1 h firmado dentro del contenedor (no se creó ninguna credencial persistente adicional).
+- `npm audit` del MCP: 0 vulnerabilidades.
+- Sin deploy: el MCP corre local/stdio; se instalará en el servidor en Fase 5 junto a Hermes.
 
 ---
 
@@ -371,4 +379,4 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 
 ---
 
-*Última actualización: 2026-09-30. Fases 1, 2 y 3 completadas y desplegadas (commits `546f3f1`→`214170f`, imágenes `indigo-notes:security-20260930` y `indigo-notes:runtime-20260930`). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
+*Última actualización: 2026-09-30. Fases 1-4 completadas (commits `546f3f1`→`0db4af0`); Fases 1-3 desplegadas (imágenes `indigo-notes:security-20260930` y `indigo-notes:runtime-20260930`). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
