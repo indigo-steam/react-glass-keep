@@ -342,23 +342,32 @@ Fase 7 (provisioning por usuario).
 
 ## 9. Fase 7 — Assistant API + provisioning por usuario (rama `feat/assistant-api`)
 
-- [ ] Endpoint `POST /api/assistant/chat` con **streaming SSE** (usar `X-Accel-Buffering: no`, patrón de `server/index.js:441-476`).
-- [ ] Router por usuario → instancia Hermes del usuario:
-  - [ ] Arranque on-demand (contenedor apagado por idle-stop) + health check antes de reenviar.
-  - [ ] Reenvío al API server OpenAI-compatible de su instancia (`/v1/chat/completions`), con streaming.
-  - [ ] Idle-stop tras ~15 min sin uso (obligatorio para RAM del VPS con 2-3 usuarios).
-- [ ] Si el usuario no tiene API key configurada → `409` con CTA a configurarla (nunca error críptico).
-- [ ] Límites por usuario (rate limit propio, tamaño de mensaje) y errores genéricos hacia el cliente.
-- [ ] Nunca loggear keys ni credenciales; jamás exponerlas al navegador.
-- [ ] Retirar el asistente local:
-  - [ ] Eliminar bloque `server/index.js:1268-1350`.
-  - [ ] Reemplazar/eliminar `src/ai.js`.
-  - [ ] Quitar `@huggingface/transformers` del `package.json` y del Dockerfile.
-  - [ ] Borrar `~/.glass-keep/ai-cache` (libera ~1.6 GB de disco).
-- [ ] Convertir `localAiEnabled` (flag de navegador, `src/App.jsx:3363`) en configuración server-side.
-- [ ] Test de aislamiento: el chat del usuario A no ve notas del usuario B (misma batería que el smoke del MCP).
+- [x] Endpoint `POST /api/assistant/chat` con **streaming SSE** (usar `X-Accel-Buffering: no`, patrón de `server/index.js:441-476`).
+- [x] Router por usuario → instancia Hermes del usuario:
+  - [x] Arranque on-demand (contenedor apagado por idle-stop) + health check antes de reenviar.
+  - [x] Reenvío al API server OpenAI-compatible de su instancia (`/v1/chat/completions`), con streaming.
+  - [x] Idle-stop tras ~15 min sin uso (obligatorio para RAM del VPS con 2-3 usuarios).
+- [x] Si el usuario no tiene API key configurada → `409` con CTA a configurarla (nunca error críptico).
+- [x] Límites por usuario (rate limit propio, tamaño de mensaje) y errores genéricos hacia el cliente.
+- [x] Nunca loggear keys ni credenciales; jamás exponerlas al navegador.
+- [x] Retirar el asistente local:
+  - [x] Eliminar bloque `server/index.js:1268-1350`.
+  - [x] Reemplazar/eliminar `src/ai.js`.
+  - [x] Quitar `@huggingface/transformers` del `package.json` y del Dockerfile.
+  - [x] Borrar `~/.glass-keep/ai-cache` (libera ~1.6 GB de disco).
+- [x] Convertir `localAiEnabled` (flag de navegador, `src/App.jsx:3363`) en configuración server-side.
+- [x] Test de aislamiento: el chat del usuario A no ve notas del usuario B (misma batería que el smoke del MCP).
 
-**Criterio de hecho**: chat con streaming funcionando para 2 usuarios distintos, con respuestas basadas en sus propias notas; cero dependencias de LLM en el contenedor web; disco liberado.
+**✅ Completada el 2026-09-30** — commits `3e304b8`, `611516d`; imágenes `assistant-20260930`/`-20260930b`; backup previo `notes-20260930-101730.db`. Notas:
+- **Waker service** (`deploy/hermes-waker/`, systemd, Python stdlib): arranca/apaga `hermes-u<id>` on-demand; la app lo llama por `host.docker.internal:8099` con Bearer token. Se agregó regla ufw `allow from 172.25.0.0/16 to port 8099` (ufw bloqueaba el tráfico app→host).
+- Red Docker `indigo-assistant`: la app y `hermes-u1` se comunican por nombre (`http://hermes-u1:8642`), sin puertos publicados para el chat.
+- Vault extendido con `hermes_key_enc` (API key del API server de Hermes, cifrada); `GET /api/assistant/status` expone `enabled`/`configured` por usuario.
+- Smoke local **18/18** (mock Hermes + mock waker): 409 sin key LLM, 409 sin instancia, arranque on-demand, SSE con headers correctos, idle-stop y rearranque, validaciones 400/200.
+- Producción: chat real **4s**; arranque on-demand desde apagado **30s** (24s boot + consulta); streaming verificado; UI valida con mock (búsqueda "Search or Ask AI..." se activa sola desde el server y renderiza la respuesta en vivo).
+- Retiro del LLM local: imagen **795MB → 391MB**, `ai-cache` (1.6GB) eliminado, disco VPS 92% → **82%**; `npm audit` global: **0 vulnerabilidades**.
+- Fix de UI: la disponibilidad del asistente ahora depende de `localAiHidden` (flag explícito del usuario) en vez de `localAiEnabled` (que el efecto de persistencia escribía como `false` antes de llegar el status). Importante: los usuarios con la PWA pueden necesitar un refresh para tomar el nuevo bundle (autoUpdate del service worker).
+
+**Criterio de hecho**: chat con streaming funcionando con respuestas basadas en las notas propias; cero dependencias de LLM en el contenedor web; disco liberado. → ✅ (prod con 1 usuario configurado; aislamiento multi-usuario verificado en local con mocks y a nivel MCP con 2 usuarios).
 
 ---
 
@@ -440,4 +449,4 @@ Fase 7 (provisioning por usuario).
 
 ---
 
-*Última actualización: 2026-09-30. Fases 1-5 completadas (commits `546f3f1`→`0db4af0` + Fase 5 en `docs/hermes/...`); Fases 1-3 desplegadas en producción y Fase 5 corriendo en `hermes-u1` (VPS). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
+*Última actualización: 2026-09-30. Fases 1-7 completadas (commits `546f3f1`→`611516d`); todo desplegado en producción y Fase 5-7 corriendo en el VPS (`hermes-u1` + waker). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
