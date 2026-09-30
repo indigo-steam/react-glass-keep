@@ -1423,7 +1423,8 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, env: NODE_ENV }));
 if (NODE_ENV === "production") {
   const dist = path.join(__dirname, "..", "dist");
   app.use(express.static(dist));
-  app.get("*", (_req, res) => {
+  // Express 5 / path-to-regexp v8: named wildcard replaces bare "*"
+  app.get("/{*splat}", (_req, res) => {
     res.sendFile(path.join(dist, "index.html"));
   });
 }

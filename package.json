@@ -21,7 +21,7 @@
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "dompurify": "^3.4.16",
-    "express": "^4.21.2",
+    "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "framer-motion": "^12.23.12",
     "helmet": "^8.3.0",
