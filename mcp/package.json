@@ -1,0 +1,19 @@
+{
+  "name": "indigo-notes-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Read-only MCP server for Indigo Notes (Glass Keep) backed by the REST API",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "smoke": "node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^3.25.0"
+  }
+}
