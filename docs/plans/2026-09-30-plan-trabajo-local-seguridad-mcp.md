@@ -29,11 +29,27 @@
 | S7 | Se crea admin `admin/admin` si la tabla está vacía | `server/index.js:271-282` |
 
 **Arquitectura objetivo (al final del plan)**
+
+Decisión 2026-09-30 (multi-usuario): **un Hermes por usuario** (Hermes es single-tenant
+por diseño: un proceso = un `config.yaml` = una credencial MCP y una memoria), **BYOK**
+(cada usuario trae su API key LLM, cifrada en reposo) y **OpenRouter + endpoints custom
+OpenAI-compatible** como proveedores. Instancias idle-stop en el VPS (1-3 usuarios).
+Los usuarios que prefieran su propio agente externo (Claude Desktop, Hermes propio)
+siguen usando el MCP público con su secret key.
+
 ```
-Usuario → Glass Keep Web UI → Assistant API → Hermes → Cloud LLM
-                                                    ↓
-                                            GlassKeep MCP → Glass Keep API → SQLite
+Usuario → Glass Keep Web UI → Assistant API (Node, rutas por usuario)
+                                  └→ Hermes del usuario (contenedor, HERMES_HOME propio)
+                                       ├─ Cloud LLM con SU api key (BYOK, cifrada)
+                                       └─ GlassKeep MCP (stdio) con SU credencial
+                                            └→ Glass Keep API → SQLite
 ```
+
+Contexto de la decisión (verificado 2026-09-30):
+- Hermes Agent = NousResearch/hermes-agent; "single-tenant personal agent" por security policy.
+- Superficie de integración: `hermes serve` expone API server OpenAI-compatible (`/v1/chat/completions`).
+- MCP servers se configuran por proceso (`HERMES_HOME`/`config.yaml`); memoria (`USER.md`) global por instancia.
+- Multi-tenant orchestrator nativo: feature request abierto (#82701); no esperarlo.
 
 ---
 
@@ -258,23 +274,32 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 
 ---
 
-## 7. Fase 5 — Pruebas con Hermes (rama/config `feat/hermes`)
+## 7. Fase 5 — Hermes base + 1 instancia (dueño) (rama/config `feat/hermes`)
 
-- [ ] Definir cómo consume Hermes el MCP (`stdio` si es local; HTTP si es contenedor).
-- [ ] Configurar Hermes con la API key del LLM **solo en su entorno** (nunca en frontend ni en el repo).
-- [ ] Pruebas read-only:
+**Objetivo revisado**: validar Hermes en el VPS con **una instancia para el dueño**
+(Indigo), sin vault todavía. La multi-usuario real llega en Fase 6 (credenciales) y
+Fase 7 (provisioning por usuario).
+
+- [ ] Imagen Docker de Hermes (Python + `hermes-agent[mcp]` + Node para el MCP stdio) y volumen `HERMES_HOME=/data/hermes-users/<id>`.
+- [ ] Config de la instancia del dueño:
+  - [ ] Provider `openrouter` (o custom OpenAI-compatible) con **su** API key, solo en `~/.hermes/.env` dentro del contenedor (nunca en repo/frontend).
+  - [ ] `mcp_servers.glasskeep`: `command: node`, `args: ["/app/mcp/index.js"]`, `env: GLASSKEEP_URL=https://notes.indigosteam.com` + credencial del usuario.
+  - [ ] Toolsets acotados (solo MCP glasskeep al inicio).
+- [ ] Credencial MCP del dueño: secret key dedicada del asistente (revocable rotando desde la UI); nunca un token admin.
+- [ ] Pruebas read-only por `hermes serve` (API OpenAI-compatible):
   - [ ] "¿Qué tengo pendiente relacionado con SENA?"
   - [ ] "Busca mis notas de Fintrak"
   - [ ] "Busca la nota del cambio de aceite de la moto"
-- [ ] Medir consumo de Hermes + MCP en el servidor (1 vCPU / 2.7 GB): CPU, RAM, disco.
-- [ ] Documentar resultados en `docs/`.
+- [ ] Medir consumo de Hermes + MCP en el servidor (1 vCPU / 5.8 GB): CPU, RAM en reposo y en consulta, tiempo de arranque, disco de la imagen.
+- [ ] Documentar resultados en `docs/` y decidir política de idle-stop (Fase 7).
 
-**Criterio de hecho**: respuestas correctas citando notas reales; consumo medido y aceptable.
+**Criterio de hecho**: respuestas correctas citando notas reales; consumo medido y aceptable; integración definida (API server OpenAI-compatible).
 
 ---
 
-## 8. Fase 6 — MCP escritura (rama `feat/mcp-write`)
+## 8. Fase 6 — MCP escritura + credenciales del asistente (rama `feat/mcp-write`)
 
+### 8.1 MCP escritura
 - [ ] Herramientas:
   - [ ] `create_note(title, content?, tags?, type?, items?)` → `POST /api/notes`
   - [ ] `update_note(id, cambios)` → `PATCH /api/notes/:id` (nunca `PUT`; siempre leer antes de escribir)
@@ -284,38 +309,60 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 - [ ] Decidir identidad/auditoría del agente (hoy `last_edited_by` es texto libre,
   `server/index.js:690`): usuario bot colaborador **o** marcador `"Asistente"`.
 - [ ] Confirmación obligatoria para operaciones destructivas (diálogo en UI o flag `confirm`).
-- [ ] Añadir `POST /api/api-keys` (clave por usuario, hasheada, revocable, scopes read/write) si no se hizo antes.
 - [ ] Pruebas de aislamiento: token del usuario A no puede leer/editar notas del usuario B (salvo colaboración explícita).
 
-**Criterio de hecho**: "Créame una nota para revisar el servidor mañana" crea una nota visible en la web.
+### 8.2 Credenciales por usuario (BYOK + MCP del asistente)
+- [ ] **Ajuste de regla de oro**: los cambios de esquema llegan en esta fase (migraciones idempotentes estilo `server/index.js`), no en Fase 9.
+- [ ] Tabla `user_secrets` (cifrado AES-256-GCM con `SECRETS_MASTER_KEY` en env del contenedor web):
+  - [ ] API key LLM del usuario (BYOK) + proveedor/modelo/base URL opcional.
+  - [ ] Credencial MCP del asistente generada por el servidor (revocable), inyectada al provisionar su instancia Hermes.
+- [ ] Endpoints (auth JWT):
+  - [ ] `GET /api/assistant/credentials` → estado enmascarado (proveedor, `••••last4`, modelo).
+  - [ ] `PUT /api/assistant/credentials` → guardar/validar (test call al provider antes de aceptar).
+  - [ ] `DELETE /api/assistant/credentials` → revocar.
+  - [ ] `POST /api/api-keys` (para agentes externos BYO): hasheada, scopes read/write, revocable.
+- [ ] Validación para OpenRouter + endpoints custom OpenAI-compatible (los dos soportados).
+
+**Criterio de hecho**: ninguna credencial en claro fuera del vault; el asistente de cada usuario usa su propia key y su propia credencial MCP.
 
 ---
 
-## 9. Fase 7 — Assistant API y retirada del LLM local (rama `feat/assistant-api`)
+## 9. Fase 7 — Assistant API + provisioning por usuario (rama `feat/assistant-api`)
 
 - [ ] Endpoint `POST /api/assistant/chat` con **streaming SSE** (usar `X-Accel-Buffering: no`, patrón de `server/index.js:441-476`).
-- [ ] La Assistant API resuelve el token MCP del usuario y llama a Hermes; el navegador nunca ve la API key.
+- [ ] Router por usuario → instancia Hermes del usuario:
+  - [ ] Arranque on-demand (contenedor apagado por idle-stop) + health check antes de reenviar.
+  - [ ] Reenvío al API server OpenAI-compatible de su instancia (`/v1/chat/completions`), con streaming.
+  - [ ] Idle-stop tras ~15 min sin uso (obligatorio para RAM del VPS con 2-3 usuarios).
+- [ ] Si el usuario no tiene API key configurada → `409` con CTA a configurarla (nunca error críptico).
+- [ ] Límites por usuario (rate limit propio, tamaño de mensaje) y errores genéricos hacia el cliente.
+- [ ] Nunca loggear keys ni credenciales; jamás exponerlas al navegador.
 - [ ] Retirar el asistente local:
   - [ ] Eliminar bloque `server/index.js:1268-1350`.
   - [ ] Reemplazar/eliminar `src/ai.js`.
   - [ ] Quitar `@huggingface/transformers` del `package.json` y del Dockerfile.
-  - [ ] Borrar `~/.glass-keep/ai-cache` (libera 1.6 GB de disco).
+  - [ ] Borrar `~/.glass-keep/ai-cache` (libera ~1.6 GB de disco).
 - [ ] Convertir `localAiEnabled` (flag de navegador, `src/App.jsx:3363`) en configuración server-side.
+- [ ] Test de aislamiento: el chat del usuario A no ve notas del usuario B (misma batería que el smoke del MCP).
 
-**Criterio de hecho**: chat con streaming funcionando; cero dependencias de LLM en el contenedor web; disco liberado.
+**Criterio de hecho**: chat con streaming funcionando para 2 usuarios distintos, con respuestas basadas en sus propias notas; cero dependencias de LLM en el contenedor web; disco liberado.
 
 ---
 
-## 10. Fase 8 — Chat UI "🤖 Asistente" (rama `feat/chat-ui`)
+## 10. Fase 8 — Chat UI "🤖 Asistente" + settings BYOK (rama `feat/chat-ui`)
 
 - [ ] Nuevo componente en archivo propio: `src/assistant/AssistantView.jsx` (no engordar `App.jsx`, ya tiene 7036 líneas).
 - [ ] Ruta `#/assistant` usando el `navigate` existente (`src/App.jsx:3823`) + entrada en el menú de 3 puntos (`src/App.jsx:2596-2684`).
-- [ ] Historial de conversación en Fase 1: `localStorage` por usuario.
-- [ ] Manejo de errores: 401 con el flujo `auth-expired` (`src/App.jsx:4450-4476`), timeouts y reintento.
+- [ ] Panel de configuración del asistente:
+  - [ ] Pegar API key del LLM (OpenRouter o endpoint custom), validarla y guardarla (vía Fase 6).
+  - [ ] Mostrar enmascarada + proveedor/modelo; rotar/revocar.
+  - [ ] Estado del asistente (sin key / listo / instancia arrancando).
+- [ ] Historial de conversación: `localStorage` por usuario en esta fase (Fase 9 lo mueve a la DB).
+- [ ] Manejo de errores: 401 con el flujo `auth-expired` (`src/App.jsx:4450-4476`), 409 sin key (CTA), timeouts y reintento.
 - [ ] Claves i18n en `src/locales/en.json` y `es.json`.
 - [ ] Prueba en móvil (PWA) y escritorio.
 
-**Criterio de hecho**: conversación fluida con streaming dentro de la app, sin fugas de secretos.
+**Criterio de hecho**: conversación fluida con streaming dentro de la app, sin fugas de secretos; cualquier usuario configura su key y chatea con sus notas.
 
 ---
 
@@ -343,11 +390,12 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 
 ## 13. Reglas de oro (no negociables)
 
-- [ ] Ningún secreto en el repositorio ni en el frontend (ni API keys del LLM, ni JWT_SECRET).
+- [ ] Ningún secreto en el repositorio ni en el frontend (ni API keys del LLM, ni JWT_SECRET). Secretos de usuarios cifrados en reposo (AES-256-GCM) y jamás en logs.
 - [ ] Hermes y el MCP **nunca** acceden a SQLite; solo a la API REST.
 - [ ] El MCP usa el token del usuario autenticado; nunca un token admin global.
+- [ ] **Un Hermes por usuario** (single-tenant): nunca compartir instancia/memoria entre usuarios; barrera = contenedor/HERMES_HOME.
 - [ ] Ninguna operación destructiva sin confirmación explícita; `permanent=1` prohibido para el agente.
-- [ ] Ningún cambio de esquema de la DB hasta Fase 9; antes se usan tags/convenciones.
+- [ ] Los cambios de esquema de la DB llegan a partir de Fase 6 (BYOK/credenciales) y Fase 9 (memoria), siempre con migraciones idempotentes.
 - [ ] Una fase = una rama = un despliegue verificable + rollback listo.
 - [ ] Antes de cada deploy: respaldo de DB y health check después.
 
