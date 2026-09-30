@@ -375,10 +375,11 @@ Fase 7 (provisioning por usuario).
 
 - [ ] Nuevo componente en archivo propio: `src/assistant/AssistantView.jsx` (no engordar `App.jsx`, ya tiene 7036 líneas).
 - [ ] Ruta `#/assistant` usando el `navigate` existente (`src/App.jsx:3823`) + entrada en el menú de 3 puntos (`src/App.jsx:2596-2684`).
-- [ ] Panel de configuración del asistente:
-  - [ ] Pegar API key del LLM (OpenRouter o endpoint custom), validarla y guardarla (vía Fase 6).
-  - [ ] Mostrar enmascarada + proveedor/modelo; rotar/revocar.
-  - [ ] Estado del asistente (sin key / listo / instancia arrancando).
+- [ ] Panel de configuración del asistente: **adelantado el 2026-09-30** (ver `docs/SELF-HOSTING.md`):
+  - [x] Pegar API key del LLM (OpenRouter o endpoint custom), validarla y guardarla (vía Fase 6).
+  - [x] Mostrar enmascarada + proveedor/modelo; rotar/revocar.
+  - [x] Estado del asistente (sin key / listo / instancia arrancando). El cambio de proveedor/modelo/key se aplica a la instancia Hermes vía waker.
+  - [x] Extras: toggle ✨ de modo AI en la barra de búsqueda (fix móvil, consultas cortas), memoria persistente del agente (`platform_toolsets.api_server: [memory]`), auto-update del service worker.
 - [x] Historial de conversación: `localStorage` por usuario en esta fase (Fase 9 lo mueve a la DB). **Adelantado el 2026-09-30** (junto con Fase 7): `assistantHistory-<userId>` guarda los últimos 20 mensajes; se envían en cada request y el botón "limpiar respuesta" resetea el hilo.
 - [ ] Manejo de errores: 401 con el flujo `auth-expired` (`src/App.jsx:4450-4476`), 409 sin key (CTA), timeouts y reintento.
 - [ ] Claves i18n en `src/locales/en.json` y `es.json`.
@@ -449,4 +450,4 @@ Fase 7 (provisioning por usuario).
 
 ---
 
-*Última actualización: 2026-09-30. Fases 1-7 completadas (commits `546f3f1`→`611516d`); todo desplegado en producción y Fase 5-7 corriendo en el VPS (`hermes-u1` + waker). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
+*Última actualización: 2026-09-30. Fases 1-7 completadas (+ panel BYOK adelantado; guía `docs/SELF-HOSTING.md`) (commits `546f3f1`→`611516d`); todo desplegado en producción y Fase 5-7 corriendo en el VPS (`hermes-u1` + waker). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*

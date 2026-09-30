@@ -2,6 +2,10 @@
 
 A sleek, Keep-style notes app with Markdown, checklists, images, tag chips, color themes, dark mode, drag-and-drop reordering, import/export, auth, and a glassy UI — built with Vite + React and a tiny Express + SQLite API.
 
+> **¿Querés montar tu propia instancia con asistente AI?**
+> Guía paso a paso (self-hosting en español): [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md).
+> Cada usuario obtiene su propio agente (Hermes) + MCP de notas + BYOK (tu API key de LLM).
+
 ---
 **Web App Screenshots**
 
@@ -26,15 +30,21 @@ A sleek, Keep-style notes app with Markdown, checklists, images, tag chips, colo
 
 * **Auth & Multi-user**
   * Register, Login (username + password), Sign out
-  * **Default Admin Account:** `admin` / `admin` (if no users exist) ✅ NEW
+  * **Optional dev seed:** `admin` / `admin` only when `SEED_DEFAULT_ADMIN=true` (dev only) ✅
   * **Secret recovery key** download + **Sign in with Secret Key**
   * Each user sees **only their notes**
 
-* **Private AI Assistant (Llama 3.2)** ✅ NEW
-  * **100% Local & Private** — Runs entirely on your own server. No data ever leaves your hardware.
-  * **Note-Aware (RAG)** — The AI reads your own notes to answer questions factually.
-  * **Smart Search** — Ask questions like "What are my AWS commands?" or "How old am I?" and get direct answers based on your private data.
-  * **Privacy First** — Uses an optimized Llama 3.2 (1B) model running inside your Docker container.
+* **Private AI Assistant (per-user agent + BYOK)** ✅ NEW
+  * **One Hermes agent per user** — each account gets its own isolated agent instance
+    (separate container, memory and credentials); no shared multi-tenant memory.
+  * **Your own API key (BYOK)** — connect OpenRouter or any OpenAI-compatible endpoint from
+    the app UI; keys are stored **encrypted at rest** (AES-256-GCM) and never reach the browser.
+  * **Note-aware via MCP** — the agent reads/writes your notes through the GlassKeep MCP
+    (search, read, create, update, archive); it never touches the database directly.
+  * **Durable memory** — instructions you give ("when I tell you the mileage, update note X")
+    persist across sessions and devices.
+  * **Bring your own agent too** — the MCP also works with Claude Desktop, your own Hermes,
+    Cursor, etc. (see [`mcp/README.md`](mcp/README.md)).
 
 * **Collaboration (real-time)** ✅ NEW
 
@@ -122,9 +132,10 @@ A sleek, Keep-style notes app with Markdown, checklists, images, tag chips, colo
 
 ## 🧰 Requirements
 
-* **Node.js 18+** and npm
-* (Optional) **Docker** & **Docker Compose**
+* **Node.js 22+** and npm (Node 18 is EOL; the Docker image uses Node 22)
+* **Docker** & Docker Compose (for the AI assistant stack too)
 * SQLite is embedded (no external DB needed)
+* Optional: an LLM API key (OpenRouter or any OpenAI-compatible endpoint) for the assistant
 
 ---
 
@@ -148,32 +159,37 @@ A sleek, Keep-style notes app with Markdown, checklists, images, tag chips, colo
 ### 1) Install dependencies
 
 ```bash
-npm install
-# (Optional) only If you don't have these dev/runtime deps yet:
-npm install -D concurrently nodemon
-npm install express better-sqlite3 cors jsonwebtoken bcryptjs
+npm ci
 ```
 
-### 2) Run (web + API)
+### 2) Configure dev env (`.env.local`)
 
-**POSIX/mac/Linux:**
+The server loads `.env.local` automatically in development:
+
+```env
+JWT_SECRET=dev-local-secret
+SECRETS_MASTER_KEY=<openssl rand -base64 32>   # required for the assistant vault (BYOK)
+DB_FILE=./data/dev.sqlite
+API_PORT=8080
+NODE_ENV=development
+ALLOW_REGISTRATION=true
+SEED_DEFAULT_ADMIN=true                        # optional: seeds admin/admin (dev only)
+ADMIN_EMAILS=your-admin-username
+```
+
+### 3) Run (web + API)
+
 ```bash
-ADMIN_EMAILS="your-admin-username" npm run dev
-```
-
-**Windows (PowerShell):**
-```powershell
-setx ADMIN_EMAILS "your-admin-username"
 npm run dev
 ```
 
 - Frontend (Vite): http://localhost:5173
-- Docker: http://localhost:8080  
+- API: http://localhost:8080
   *(Vite dev server proxies `/api` → `http://localhost:8080`.)*
 
 **Promote an existing user to admin (optional):**
 ```sql
--- Run against server/data.sqlite
+-- Run against your dev DB (DB_FILE)
 UPDATE users SET is_admin=1 WHERE email='your-admin-username';
 ```
 
@@ -211,74 +227,68 @@ docker run -d \
 > - **Username:** `admin`
 > - **Password:** `admin`
 
-## 🐳 Docker Deploy to Server(single image: API + built frontend)
+## 🐳 Docker Deploy to Server (single image: API + built frontend)
 
-### Dockerfile
+> Full walkthrough including the AI assistant stack (Hermes + MCP + waker):
+> **[`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md)**
 
-Your Dockerfile builds the frontend, bundles the API, and runs the Express server that serves both the API and the built UI.
-
-### Build & Run
+### Build & Run (from this repo)
 
 ```bash
-# Get the latest image from Docker Hub
-docker pull nikunjsingh/glass-keep:latest
+# Build the image locally
+docker build -t indigo-notes:local .
 
 # Create data dir
 mkdir -p ~/.glass-keep
 
-# (optional) stop/remove any old container
-docker rm -f glass-keep 2>/dev/null || true
+# Generate secrets (never commit them)
+JWT_SECRET="$(openssl rand -base64 48)"
+SECRETS_MASTER_KEY="$(openssl rand -base64 32)"
 
 # Run
 docker run -d \
-  --name glass-keep \
+  --name indigo-notes \
   --restart unless-stopped \
-  -p 8080:8080 \
+  -p 127.0.0.1:8082:8080 \
   -e NODE_ENV=production \
   -e API_PORT=8080 \
-  -e JWT_SECRET="replace-with-a-long-random-string" \
+  -e JWT_SECRET="$JWT_SECRET" \
+  -e SECRETS_MASTER_KEY="$SECRETS_MASTER_KEY" \
   -e DB_FILE="/app/data/notes.db" \
   -e ADMIN_EMAILS="your-admin-username" \
   -e ALLOW_REGISTRATION=false \
   -v ~/.glass-keep:/app/data \
-  nikunjsingh/glass-keep:latest
-
+  indigo-notes:local
 ```
 
-- App & API: http://localhost:8080  
-- **Admin Panel (Docker/prod):** http://localhost:8080/#/admin  
-  *(Make sure `ADMIN_EMAILS` matches the username exactly when creating the admin account)*
+- Proxy it over HTTPS (nginx/caddy) to `127.0.0.1:8082`
+- Admin: create the first account with the email listed in `ADMIN_EMAILS`
 
-### docker-compose.yml
+### docker-compose.yml (app only)
 
 ```yaml
-version: "3.8"
 services:
   app:
-    image: nikunjsingh/glass-keep:latest
-    container_name: glass-keep
+    build: .
+    image: indigo-notes:local
+    container_name: indigo-notes
     restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      API_PORT: "8080"
-      JWT_SECRET: replace-with-a-long-random-string
-      DB_FILE: /app/data/notes.db
-      ADMIN_EMAILS: your-admin-username  # <— change this to your admin user
-      ALLOW_REGISTRATION: "false"        # <— set to "true" to allow new account creation
+    env_file:
+      - ~/.glass-keep/indigo-notes.env   # NODE_ENV, JWT_SECRET, SECRETS_MASTER_KEY, ...
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8082:8080"
     volumes:
-      - /home/YOURUSER/.glass-keep:/app/data   # <— change this to your actual home path username
+      - ~/.glass-keep:/app/data
 ```
 
 Run:
 
 ```bash
-mkdir -p /home/YOURUSER/.glass-keep
-docker compose up -d
+mkdir -p ~/.glass-keep
+docker compose up -d --build
 ```
 
-> **Persistent data:** notes DB lives in the mounted `./data` folder on your host.
+> **Persistent data:** the notes DB lives in `~/.glass-keep` on your host.
 
 
 ---
@@ -348,11 +358,14 @@ docker compose up -d
   * Open the **hamburger menu** → sidebar lists all tags + counts.
   * Quick filters: **Notes (All)**, **All Images**.
 
-* **Search & AI Assistance** ✅ NEW
-  * **Deep Search**: Searches across title, Markdown text, tags, checklist items, and image names.
-  * **AI Assistant**: Press **Enter** in the search bar to ask questions about your notes.
-  * **Smart Grounding**: The AI analyzes your relevant notes to give you accurate, private answers.
-  * **One-Click Clear**: Closing the AI response box automatically clears your search query.
+* **Search & AI Assistance**
+  * **Deep Search**: searches across title, Markdown text, tags, checklist items, and image names.
+  * **AI mode**: the **star ✨** in the search bar toggles AI mode on/off (it auto-enables once
+    your assistant is configured). Type a question and hit the **send arrow** (or Enter).
+  * **Per-user agent**: answers come from *your* Hermes agent using *your* notes via the MCP,
+    with streaming responses and durable memory.
+  * **Configure it in-app**: Settings → **AI Assistant: provider & API key** (OpenRouter or
+    any OpenAI-compatible endpoint; key stored encrypted).
 
 * **Export / Import**
 
@@ -376,7 +389,12 @@ docker compose up -d
 ## 🔐 Security Notes
 
 * Treat your **Secret Key** like a password. Anyone with it can sign in as you.
-* Change `JWT_SECRET` in production to a long, random string.
+* Always set a long, random `JWT_SECRET` in production (generate with `openssl rand -base64 48`).
+* Set `SECRETS_MASTER_KEY` to store user LLM keys encrypted (AES-256-GCM); it is required
+  for the assistant's BYOK vault.
+* User API keys are never returned to the browser (only `••••last4`) and never logged.
+* The assistant reads/writes notes only through the REST API with the user's own credential
+  (never SQLite, never an admin token).
 * Serve over HTTPS in production for PWA and security best practices.
 
 ---
