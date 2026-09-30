@@ -208,19 +208,23 @@ pueden volver a loguearse.
 
 **Objetivo**: actualizar con criterio, no "a lo loco". Sin cambios funcionales.
 
-- [ ] Usar Context7 para consultar APIs actuales antes de tocar cada librería
+- [x] Usar Context7 para consultar APIs actuales antes de tocar cada librería
   (herramientas `resolve-library-id` y `query-docs`; por ejemplo: "Express 5
   migration guide", "better-sqlite3 latest API").
-- [ ] Subir el runtime del `Dockerfile` de `node:18-slim` a `node:22-slim` (LTS).
-- [ ] Revisar/actualizar una por una, con build + smoke test entre cada una:
-  - [ ] `better-sqlite3` (nativa: verificar rebuild en arm64 dentro de Docker)
-  - [ ] `express` 4 → 5 (revisar sintaxis de rutas `*` en el fallback SPA, `server/index.js:1359`)
-  - [ ] `bcryptjs`, `jsonwebtoken`, `cors`
-  - [ ] Grupo Vite/React/Tailwind (solo si hay motivo; ya están recientes)
-- [ ] Quitar del `Dockerfile` los pasos heredados de `sharp`/`libvips` si ya no se usan.
-- [ ] Construir imagen y medir tamaño/consumo; anotar antes/después.
+- [x] Subir el runtime del `Dockerfile` de `node:18-slim` a `node:22-slim` (LTS).
+- [x] Revisar/actualizar una por una, con build + smoke test entre cada una:
+  - [x] `better-sqlite3` (nativa: verificar rebuild en arm64 dentro de Docker) → v13 (N-API 10, prebuilds Node 22, sin compilar)
+  - [x] `express` 4 → 5 (revisar sintaxis de rutas `*` en el fallback SPA, `server/index.js:1359`) → wildcard migrado a `/{*splat}`
+  - [x] `bcryptjs` (→ v3, verificado que valida hashes `$2a$` de v2), `jsonwebtoken` 9.0.3, `cors` 2.8.6
+  - [x] Grupo Vite/React/Tailwind (solo si hay motivo; ya están recientes) → dentro de rango: React 19.3, Vite 7.3.6, Tailwind 4.3.3, i18next 26.4.2, marked 16.4.2, vite-plugin-pwa 1.3.0
+- [x] Quitar del `Dockerfile` los pasos heredados de `sharp`/`libvips` si ya no se usan → eliminados; sharp prebuilt verificado dentro del contenedor.
+- [x] Construir imagen y medir tamaño/consumo; anotar antes/después → **1.47 GB → 795 MB (−46%)**; RAM en reposo ~32 MB.
 
-**Criterio de hecho**: imagen construida en Node 22, app funcionando igual, sin warnings de dependencias nativas.
+**✅ Completada el 2026-09-30** — commit `214170f`, imagen `indigo-notes:runtime-20260930`, backup previo `notes-20260930-080006.db`. Notas:
+- `@huggingface/transformers` se dejó en 3.8.1 a propósito: su actualización a 4.x es breaking y la librería entera se elimina en Fase 7. Quedan 2 vulnerabilidades high de `sharp`/libvips heredadas por transformers (no alcanzables: solo se usa text-generation on-demand); se cierran al eliminar transformers.
+- Auditoría npm: 30 vulnerabilidades → 2 (solo las de sharp/transformers).
+- El contenedor de rollback `indigo-notes-old` ahora ejecuta la imagen `security-20260930`; la imagen Node 18 pre-seguridad (`:local`) fue eliminada. Disco del VPS: 94% → 85%.
+- Verificado en contenedor real: Node v22.23.3, sharp prebuilt, CSP/headers, SPA fallback, login/registro/CRUD y prueba XSS sin ejecución con las versiones nuevas.
 
 ---
 
@@ -367,4 +371,4 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 
 ---
 
-*Última actualización: 2026-09-30. Fases 1 y 2 completadas y desplegadas (commits `546f3f1`→`b8a0925`, imagen `indigo-notes:security-20260930`). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
+*Última actualización: 2026-09-30. Fases 1, 2 y 3 completadas y desplegadas (commits `546f3f1`→`214170f`, imágenes `indigo-notes:security-20260930` y `indigo-notes:runtime-20260930`). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
