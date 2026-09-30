@@ -280,20 +280,25 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 (Indigo), sin vault todavía. La multi-usuario real llega en Fase 6 (credenciales) y
 Fase 7 (provisioning por usuario).
 
-- [ ] Imagen Docker de Hermes (Python + `hermes-agent[mcp]` + Node para el MCP stdio) y volumen `HERMES_HOME=/data/hermes-users/<id>`.
-- [ ] Config de la instancia del dueño:
-  - [ ] Provider `openrouter` (o custom OpenAI-compatible) con **su** API key, solo en `~/.hermes/.env` dentro del contenedor (nunca en repo/frontend).
-  - [ ] `mcp_servers.glasskeep`: `command: node`, `args: ["/app/mcp/index.js"]`, `env: GLASSKEEP_URL=https://notes.indigosteam.com` + credencial del usuario.
-  - [ ] Toolsets acotados (solo MCP glasskeep al inicio).
-- [ ] Credencial MCP del dueño: secret key dedicada del asistente (revocable rotando desde la UI); nunca un token admin.
-- [ ] Pruebas read-only por `hermes serve` (API OpenAI-compatible):
-  - [ ] "¿Qué tengo pendiente relacionado con SENA?"
-  - [ ] "Busca mis notas de Fintrak"
-  - [ ] "Busca la nota del cambio de aceite de la moto"
-- [ ] Medir consumo de Hermes + MCP en el servidor (1 vCPU / 5.8 GB): CPU, RAM en reposo y en consulta, tiempo de arranque, disco de la imagen.
-- [ ] Documentar resultados en `docs/` y decidir política de idle-stop (Fase 7).
+- [x] Imagen Docker de Hermes (Python + `hermes-agent[mcp]` + Node para el MCP stdio) y volumen `HERMES_HOME=/data/hermes-users/<id>`.
+- [x] Config de la instancia del dueño:
+  - [x] Provider `openrouter` (o custom OpenAI-compatible) con **su** API key, solo en `~/.hermes/.env` dentro del contenedor (nunca en repo/frontend).
+  - [x] `mcp_servers.glasskeep`: `command: node`, `args: ["/app/mcp/index.js"]`, `env: GLASSKEEP_URL=https://notes.indigosteam.com` + credencial del usuario.
+  - [x] Toolsets acotados (solo MCP glasskeep al inicio) → `platform_toolsets.api_server: []` (0 tools built-in).
+- [x] Credencial MCP del dueño: secret key dedicada del asistente (revocable rotando desde la UI); nunca un token admin. *(Temporal: JWT 365d; se reemplaza en Fase 6.)*
+- [x] Pruebas read-only por `hermes serve` (API OpenAI-compatible):
+  - [x] "¿Qué tengo pendiente relacionado con SENA?"
+  - [x] "Busca mis notas de Fintrak"
+  - [x] "Busca la nota del cambio de aceite de la moto"
+- [x] Medir consumo de Hermes + MCP en el servidor (1 vCPU / 5.8 GB): CPU, RAM en reposo y en consulta, tiempo de arranque, disco de la imagen.
+- [x] Documentar resultados en `docs/` y decidir política de idle-stop (Fase 7).
 
-**Criterio de hecho**: respuestas correctas citando notas reales; consumo medido y aceptable; integración definida (API server OpenAI-compatible).
+**✅ Completada el 2026-09-30** — resultados completos en `docs/hermes/2026-09-30-resultados-fase-5.md`. Resumen:
+- Contenedor `hermes-u1` con imagen oficial `nousresearch/hermes-agent:latest` (v0.21.5) + MCP de GlassKeep (stdio, montado read-only) + API server OpenAI-compatible en `127.0.0.1:8643`.
+- Las 3 consultas devolvieron respuestas correctas citando notas reales; streaming SSE verificado.
+- Consumo: arranque 21 s; RAM ~270–337 MB; CPU <0.5 %; imagen 2.69 GB; `HERMES_HOME` 75 MB/usuario; disco VPS al 92 % (la limpieza de `ai-cache` en Fase 7 libera 1.6 GB).
+- Mejora detectada para Fase 6: aceptar alias `queries` en `search_notes` (el modelo lo intentó y el schema lo rechazó; reintentó con éxito).
+- Pendiente operativo: reemplazar el JWT temporal del MCP por la secret key del usuario o `api-keys` (Fase 6), y la OpenRouter key temporal por la UI BYOK.
 
 ---
 
@@ -427,4 +432,4 @@ Fase 7 (provisioning por usuario).
 
 ---
 
-*Última actualización: 2026-09-30. Fases 1-4 completadas (commits `546f3f1`→`0db4af0`); Fases 1-3 desplegadas (imágenes `indigo-notes:security-20260930` y `indigo-notes:runtime-20260930`). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
+*Última actualización: 2026-09-30. Fases 1-5 completadas (commits `546f3f1`→`0db4af0` + Fase 5 en `docs/hermes/...`); Fases 1-3 desplegadas en producción y Fase 5 corriendo en `hermes-u1` (VPS). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
