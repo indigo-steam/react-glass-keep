@@ -261,6 +261,11 @@ const ArrowRight = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
   </svg>
 );
+const SendIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6" />
+  </svg>
+);
 const Kebab = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <circle cx="12" cy="5" r="1.5" />
@@ -2724,7 +2729,7 @@ function NotesUI({
                   className="h-9 w-9 rounded-full flex items-center justify-center text-indigo-600 hover:bg-indigo-600/10 transition-colors"
                   onClick={() => onAiSearch?.(search)}
                 >
-                  <Sparkles />
+                  <SendIcon />
                 </button>
               )}
               {search && (
