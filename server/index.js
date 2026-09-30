@@ -10,6 +10,17 @@ const Database = require("better-sqlite3");
 const cors = require("cors");
 const crypto = require("crypto");
 
+// Load local dev env vars from .env.local (never in production)
+if (process.env.NODE_ENV !== "production") {
+  try {
+    require("dotenv").config({ path: path.join(__dirname, "..", ".env.local") });
+  } catch (_) {
+    /* dotenv is a devDependency; ignore if missing */
+  }
+}
+const { rateLimit } = require("express-rate-limit");
+const helmet = require("helmet");
+
 // Transformers.js for server-side AI
 let pipeline;
 let env;
@@ -42,9 +53,16 @@ async function initServerAI() {
 // initServerAI().catch(console.error);
 
 const app = express();
+app.set("trust proxy", 1); // behind nginx reverse proxy (notes.indigosteam.com)
+
 const PORT = Number(process.env.API_PORT || process.env.PORT || 8080);
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-please-change";
 const NODE_ENV = process.env.NODE_ENV || "development";
+const JWT_SECRET =
+  process.env.JWT_SECRET || (NODE_ENV === "production" ? "" : "dev-secret-please-change");
+if (!JWT_SECRET) {
+  console.error("[FATAL] JWT_SECRET is required when NODE_ENV=production. Aborting.");
+  process.exit(1);
+}
 
 // ---------- Body parsing ----------
 app.use(express.json({ limit: "20mb" }));
@@ -59,6 +77,17 @@ if (NODE_ENV !== "production") {
     })
   );
 }
+
+// ---------- Security headers ----------
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        "img-src": ["'self'", "data:", "blob:", "https:"],
+      },
+    },
+  })
+);
 
 // ---------- SQLite ----------
 const dbFile =
@@ -243,6 +272,8 @@ function auth(req, res, next) {
 }
 
 // Auth that also supports token in query string for EventSource
+// TODO(S5): token in query string can leak via logs/proxies. Migrate to
+// HttpOnly cookie or one-time ticket (plan fase 2, §4.4).
 function authFromQueryOrHeader(req, res, next) {
   const h = req.headers.authorization || "";
   const headerToken = h.startsWith("Bearer ") ? h.slice(7) : null;
@@ -268,7 +299,9 @@ const insertUser = db.prepare(
 );
 
 // Seed default admin user if none exist
+// Dev only, opt-in: set SEED_DEFAULT_ADMIN=true (never in production) (S7)
 (function seedDefaultAdmin() {
+  if (process.env.SEED_DEFAULT_ADMIN !== "true") return;
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
   if (userCount === 0) {
     const adminEmail = "admin";
@@ -502,7 +535,17 @@ app.post("/api/register", (req, res) => {
   });
 });
 
-app.post("/api/login", (req, res) => {
+// ---------- Auth rate limiting ----------
+// 10 attempts per IP per 15 minutes on login endpoints (S6)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Too many attempts. Please try again later." },
+});
+
+app.post("/api/login", authLimiter, (req, res) => {
   const { email, password } = req.body || {};
   const user = email ? getUserByEmail.get(email) : null;
   if (!user) return res.status(401).json({ error: "No account found for that email." });
@@ -542,7 +585,7 @@ app.post("/api/secret-key", auth, (req, res) => {
 });
 
 // Login with secret key
-app.post("/api/login/secret", (req, res) => {
+app.post("/api/login/secret", authLimiter, (req, res) => {
   const { key } = req.body || {};
   if (!key || typeof key !== "string" || key.length < 16) {
     return res.status(400).json({ error: "Invalid key." });
@@ -1054,10 +1097,31 @@ function adminOnly(req, res, next) {
   next();
 }
 
-// Admin settings storage (in-memory for now, could be moved to DB)
-let adminSettings = {
-  allowNewAccounts: process.env.ALLOW_REGISTRATION === "true" || false
-};
+// Admin settings storage: persisted as JSON next to the DB so the
+// registration toggle survives restarts (no schema changes required).
+const adminSettingsFile = path.join(path.dirname(dbFile), "admin-settings.json");
+
+function loadAdminSettings() {
+  try {
+    if (fs.existsSync(adminSettingsFile)) {
+      const parsed = JSON.parse(fs.readFileSync(adminSettingsFile, "utf8"));
+      return { allowNewAccounts: parsed.allowNewAccounts === true };
+    }
+  } catch (e) {
+    console.error("Failed to load admin settings:", e.message);
+  }
+  return { allowNewAccounts: process.env.ALLOW_REGISTRATION === "true" || false };
+}
+
+let adminSettings = loadAdminSettings();
+
+function saveAdminSettings() {
+  try {
+    fs.writeFileSync(adminSettingsFile, JSON.stringify(adminSettings, null, 2));
+  } catch (e) {
+    console.error("Failed to save admin settings:", e.message);
+  }
+}
 
 // Get admin settings
 app.get("/api/admin/settings", auth, adminOnly, (_req, res) => {
@@ -1070,6 +1134,7 @@ app.patch("/api/admin/settings", auth, adminOnly, (req, res) => {
 
   if (typeof allowNewAccounts === 'boolean') {
     adminSettings.allowNewAccounts = allowNewAccounts;
+    saveAdminSettings();
   }
 
   res.json(adminSettings);
@@ -1128,7 +1193,9 @@ const searchUsersStmt = db.prepare(`
   LIMIT 50
 `);
 app.get("/api/users/search", auth, (req, res) => {
-  const query = req.query.q || "";
+  const query = String(req.query.q || "").trim();
+  // Require at least 3 characters: never list all users with an empty query (S4)
+  if (query.length < 3) return res.json([]);
   const searchTerm = `%${query}%`;
   const rows = searchUsersStmt.all(searchTerm, searchTerm);
   res.json(
