@@ -1920,11 +1920,13 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
                         cancelText: t('common.cancel'),
                         danger: false,
                         onConfirm: async () => {
+                          try { localStorage.removeItem("localAiHidden"); } catch (e) { /* ignore */ }
                           setLocalAiEnabled(true);
                           showToast(t('toast.aiEnabled'), "success");
                         }
                       });
                     } else {
+                      try { localStorage.setItem("localAiHidden", "true"); } catch (e) { /* ignore */ }
                       setLocalAiEnabled(false);
                       showToast(t('toast.aiDisabled'), "info");
                     }
@@ -3387,9 +3389,9 @@ export default function App() {
         const data = await api("/assistant/status", { token });
         if (cancelled) return;
         if (data?.enabled && data?.configured) {
-          let stored = null;
-          try { stored = localStorage.getItem("localAiEnabled"); } catch (e) { /* ignore */ }
-          if (stored === null) setLocalAiEnabled(true);
+          let hidden = false;
+          try { hidden = localStorage.getItem("localAiHidden") === "true"; } catch (e) { /* ignore */ }
+          if (!hidden) setLocalAiEnabled(true);
         } else {
           setLocalAiEnabled(false);
         }
