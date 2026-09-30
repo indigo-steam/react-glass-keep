@@ -64,6 +64,43 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
+// ---------- Secrets vault (AES-256-GCM) ----------
+// SECRETS_MASTER_KEY must be a base64-encoded 32-byte key:
+//   openssl rand -base64 32
+const SECRETS_MASTER_KEY = process.env.SECRETS_MASTER_KEY
+  ? Buffer.from(process.env.SECRETS_MASTER_KEY, "base64")
+  : null;
+const vaultReady = !!SECRETS_MASTER_KEY && SECRETS_MASTER_KEY.length === 32;
+if (!vaultReady && NODE_ENV === "production") {
+  console.warn(
+    "[WARN] SECRETS_MASTER_KEY missing or invalid (need base64 32 bytes). " +
+      "Assistant credentials endpoints will return 503."
+  );
+}
+
+function encryptSecret(plain) {
+  if (!vaultReady) throw new Error("SECRETS_MASTER_KEY not configured");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", SECRETS_MASTER_KEY, iv);
+  const enc = Buffer.concat([cipher.update(String(plain), "utf8"), cipher.final()]);
+  return [iv.toString("base64"), cipher.getAuthTag().toString("base64"), enc.toString("base64")].join(".");
+}
+
+function decryptSecret(payload) {
+  if (!vaultReady) throw new Error("SECRETS_MASTER_KEY not configured");
+  const [ivB64, tagB64, dataB64] = String(payload).split(".");
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    SECRETS_MASTER_KEY,
+    Buffer.from(ivB64, "base64")
+  );
+  decipher.setAuthTag(Buffer.from(tagB64, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(dataB64, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
 // ---------- Body parsing ----------
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
@@ -150,6 +187,33 @@ CREATE TABLE IF NOT EXISTS note_collaborators (
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY(added_by) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE(note_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  key_prefix TEXT NOT NULL,        -- "gk_xxxxxxxx" for display/lookup
+  key_hash TEXT NOT NULL,          -- bcrypt hash of the full key
+  scopes TEXT NOT NULL DEFAULT 'read', -- "read" | "write"
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
+
+CREATE TABLE IF NOT EXISTS user_secrets (
+  user_id INTEGER PRIMARY KEY,
+  llm_provider TEXT,               -- "openrouter" | "custom"
+  llm_base_url TEXT,               -- for custom OpenAI-compatible endpoints
+  llm_model TEXT,
+  llm_key_enc TEXT,                -- AES-256-GCM payload (iv.tag.data, base64)
+  mcp_key_enc TEXT,                -- assistant MCP credential (encrypted, for provisioning)
+  mcp_key_prefix TEXT,             -- display
+  created_at TEXT,
+  updated_at TEXT,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 `);
 
@@ -253,10 +317,46 @@ function signToken(user) {
   );
 }
 
+const API_KEY_PREFIX = "gk_";
+const API_KEY_SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
+
+function generateApiKey() {
+  const key = `${API_KEY_PREFIX}${crypto.randomBytes(32).toString("base64url")}`;
+  return { key, prefix: key.slice(0, 12) };
+}
+
+function authWithApiKey(req, res, key, next) {
+  const row = db
+    .prepare("SELECT * FROM api_keys WHERE key_prefix = ? AND revoked_at IS NULL")
+    .get(key.slice(0, 12));
+  if (!row || !bcrypt.compareSync(key, row.key_hash)) {
+    return res.status(401).json({ error: "Invalid API key" });
+  }
+  if (row.scopes !== "write" && !API_KEY_SAFE_METHODS.includes(req.method)) {
+    return res.status(403).json({ error: "API key is read-only" });
+  }
+  const user = getUserById.get(row.user_id);
+  if (!user) return res.status(401).json({ error: "Invalid API key" });
+  db.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?").run(nowISO(), row.id);
+  req.user = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    is_admin: !!user.is_admin,
+  };
+  req.apiKey = { id: row.id, scopes: row.scopes };
+  const rawEditor = req.headers["x-edited-by"];
+  if (typeof rawEditor === "string" && rawEditor.trim()) {
+    req.editedBy = rawEditor.trim().slice(0, 80).replace(/[\r\n]/g, "");
+  }
+  next();
+}
+
 function auth(req, res, next) {
   const h = req.headers.authorization || "";
   const token = h.startsWith("Bearer ") ? h.slice(7) : null;
   if (!token) return res.status(401).json({ error: "Missing token" });
+  if (token.startsWith(API_KEY_PREFIX)) return authWithApiKey(req, res, token, next);
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.user = {
@@ -269,6 +369,11 @@ function auth(req, res, next) {
   } catch {
     return res.status(401).json({ error: "Invalid token" });
   }
+}
+
+// Name used for the "last edited by" audit field on note writes
+function editorName(req) {
+  return req.editedBy || req.user.name || req.user.email || "Usuario";
 }
 
 // Auth that also supports token in query string for EventSource
@@ -730,7 +835,7 @@ app.put("/api/notes/:id", auth, (req, res) => {
   }
 
   // Update editor tracking (store display name)
-  updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+  updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), id);
   broadcastNoteUpdated(id);
   res.json({ ok: true });
 });
@@ -759,7 +864,7 @@ app.patch("/api/notes/:id", auth, (req, res) => {
   }
 
   // Update editor tracking (store display name)
-  updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+  updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), id);
   broadcastNoteUpdated(id);
 
   res.json({ ok: true });
@@ -775,7 +880,7 @@ app.delete("/api/notes/:id", auth, (req, res) => {
     deleteNote.run(id, req.user.id);
   } else {
     moveToTrash.run(id, req.user.id);
-    updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+    updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), id);
     broadcastNoteUpdated(id);
   }
   res.json({ ok: true });
@@ -811,7 +916,7 @@ app.post("/api/notes/:id/restore", auth, (req, res) => {
   const existing = getNote.get(id, req.user.id);
   if (!existing) return res.status(404).json({ error: "Note not found" });
   restoreFromTrash.run(id, req.user.id);
-  updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+  updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), id);
   broadcastNoteUpdated(id);
   res.json({ ok: true });
 });
@@ -874,7 +979,7 @@ app.post("/api/notes/:id/collaborate", auth, (req, res) => {
     addCollaborator.run(noteId, collaborator.id, req.user.id, nowISO());
 
     // Update note with editor info
-    updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), noteId);
+    updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), noteId);
     broadcastNoteUpdated(noteId);
 
     res.json({
@@ -944,7 +1049,7 @@ app.delete("/api/notes/:id/collaborate/:userId", auth, (req, res) => {
   }
 
   // Update note with editor info
-  updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), noteId);
+  updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), noteId);
   broadcastNoteUpdated(noteId);
 
   res.json({ ok: true, message: "Collaborator removed" });
@@ -996,7 +1101,7 @@ app.post("/api/notes/:id/archive", auth, (req, res) => {
   }
 
   // Update editor tracking
-  updateNoteWithEditor.run(nowISO(), req.user.name || req.user.email, nowISO(), id);
+  updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), id);
   broadcastNoteUpdated(id);
 
   res.json({ ok: true });
@@ -1088,6 +1193,204 @@ app.post("/api/notes/import", auth, (req, res) => {
   });
   tx(src);
   res.json({ ok: true, imported: src.length });
+});
+
+// ---------- API keys (for external agents / MCP) ----------
+const insertApiKey = db.prepare(`
+  INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+const listApiKeys = db.prepare(`
+  SELECT id, name, key_prefix, scopes, created_at, last_used_at, revoked_at
+  FROM api_keys WHERE user_id = ? ORDER BY created_at DESC
+`);
+
+app.get("/api/api-keys", auth, (req, res) => {
+  res.json(
+    listApiKeys.all(req.user.id).map((r) => ({
+      id: r.id,
+      name: r.name,
+      prefix: r.key_prefix,
+      scopes: r.scopes,
+      created_at: r.created_at,
+      last_used_at: r.last_used_at,
+      revoked: !!r.revoked_at,
+    }))
+  );
+});
+
+app.post("/api/api-keys", auth, (req, res) => {
+  if (req.apiKey) {
+    return res.status(403).json({ error: "Use a session token to manage API keys." });
+  }
+  const name = String(req.body?.name || "API key").trim().slice(0, 60) || "API key";
+  const scopes = req.body?.scopes === "write" ? "write" : "read";
+  const { key, prefix } = generateApiKey();
+  const created = nowISO();
+  const info = insertApiKey.run(
+    req.user.id,
+    name,
+    prefix,
+    bcrypt.hashSync(key, 10),
+    scopes,
+    created
+  );
+  res.status(201).json({
+    id: info.lastInsertRowid,
+    name,
+    scopes,
+    prefix,
+    key,
+    created_at: created,
+    note: "Guardá esta clave: no se vuelve a mostrar.",
+  });
+});
+
+app.delete("/api/api-keys/:id", auth, (req, res) => {
+  const id = Number(req.params.id);
+  const result = db
+    .prepare(
+      "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL"
+    )
+    .run(nowISO(), id, req.user.id);
+  if (result.changes === 0) {
+    return res.status(404).json({ error: "API key not found or already revoked" });
+  }
+  res.json({ ok: true });
+});
+
+// ---------- Assistant credentials (BYOK vault) ----------
+const getUserSecrets = db.prepare("SELECT * FROM user_secrets WHERE user_id = ?");
+const upsertUserSecrets = db.prepare(`
+  INSERT INTO user_secrets
+    (user_id, llm_provider, llm_base_url, llm_model, llm_key_enc, mcp_key_enc, mcp_key_prefix, created_at, updated_at)
+  VALUES
+    (@user_id, @llm_provider, @llm_base_url, @llm_model, @llm_key_enc, @mcp_key_enc, @mcp_key_prefix, @created_at, @updated_at)
+  ON CONFLICT(user_id) DO UPDATE SET
+    llm_provider = COALESCE(excluded.llm_provider, user_secrets.llm_provider),
+    llm_base_url = COALESCE(excluded.llm_base_url, user_secrets.llm_base_url),
+    llm_model = COALESCE(excluded.llm_model, user_secrets.llm_model),
+    llm_key_enc = COALESCE(excluded.llm_key_enc, user_secrets.llm_key_enc),
+    mcp_key_enc = COALESCE(excluded.mcp_key_enc, user_secrets.mcp_key_enc),
+    mcp_key_prefix = COALESCE(excluded.mcp_key_prefix, user_secrets.mcp_key_prefix),
+    updated_at = excluded.updated_at
+`);
+
+function publicCredentials(row) {
+  let last4 = null;
+  if (row?.llm_key_enc) {
+    try {
+      const value = decryptSecret(row.llm_key_enc);
+      last4 = value ? value.slice(-4) : null;
+    } catch {
+      last4 = null;
+    }
+  }
+  return {
+    provider: row?.llm_provider || null,
+    base_url: row?.llm_base_url || null,
+    model: row?.llm_model || null,
+    llm_key_last4: last4,
+    mcp_key_prefix: row?.mcp_key_prefix || null,
+    updated_at: row?.updated_at || null,
+    vault_ready: vaultReady,
+  };
+}
+
+function ensureAssistantMcpKey(userId) {
+  const row = getUserSecrets.get(userId);
+  if (row?.mcp_key_enc) return row.mcp_key_prefix;
+  const { key, prefix } = generateApiKey();
+  insertApiKey.run(userId, "Asistente", prefix, bcrypt.hashSync(key, 10), "write", nowISO());
+  const now = nowISO();
+  upsertUserSecrets.run({
+    user_id: userId,
+    llm_provider: null,
+    llm_base_url: null,
+    llm_model: null,
+    llm_key_enc: null,
+    mcp_key_enc: encryptSecret(key),
+    mcp_key_prefix: prefix,
+    created_at: now,
+    updated_at: now,
+  });
+  return prefix;
+}
+
+async function validateLlmKey({ provider, apiKey, baseUrl }) {
+  const modelsUrl =
+    provider === "openrouter"
+      ? "https://openrouter.ai/api/v1/models"
+      : `${String(baseUrl).replace(/\/+$/, "")}/models`;
+  try {
+    const res = await fetch(modelsUrl, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (err) {
+    return { ok: false, status: 0, error: err.message };
+  }
+}
+
+app.get("/api/assistant/credentials", auth, (req, res) => {
+  res.json(publicCredentials(getUserSecrets.get(req.user.id)));
+});
+
+app.put("/api/assistant/credentials", auth, async (req, res) => {
+  if (!vaultReady) {
+    return res.status(503).json({ error: "Vault no configurado (SECRETS_MASTER_KEY)." });
+  }
+  if (req.apiKey) {
+    return res.status(403).json({ error: "Use a session token to manage credentials." });
+  }
+  const provider =
+    req.body?.provider === "custom"
+      ? "custom"
+      : req.body?.provider === "openrouter"
+        ? "openrouter"
+        : null;
+  const apiKey = typeof req.body?.api_key === "string" ? req.body.api_key.trim() : "";
+  const baseUrl = typeof req.body?.base_url === "string" ? req.body.base_url.trim() : "";
+  const model =
+    typeof req.body?.model === "string" ? req.body.model.trim().slice(0, 120) : "";
+  if (!provider) return res.status(400).json({ error: "provider debe ser 'openrouter' o 'custom'." });
+  if (!apiKey || apiKey.length < 8) return res.status(400).json({ error: "API key inválida." });
+  if (provider === "custom" && !/^https?:\/\//i.test(baseUrl)) {
+    return res.status(400).json({ error: "base_url requerida para provider 'custom'." });
+  }
+  const check = await validateLlmKey({ provider, apiKey, baseUrl });
+  if (!check.ok) {
+    return res.status(400).json({
+      error: `No se pudo validar la API key (HTTP ${check.status}${check.error ? `: ${check.error}` : ""}).`,
+    });
+  }
+  const now = nowISO();
+  upsertUserSecrets.run({
+    user_id: req.user.id,
+    llm_provider: provider,
+    llm_base_url: provider === "custom" ? baseUrl : null,
+    llm_model: model || null,
+    llm_key_enc: encryptSecret(apiKey),
+    mcp_key_enc: null,
+    mcp_key_prefix: null,
+    created_at: now,
+    updated_at: now,
+  });
+  ensureAssistantMcpKey(req.user.id);
+  res.json(publicCredentials(getUserSecrets.get(req.user.id)));
+});
+
+app.delete("/api/assistant/credentials", auth, (req, res) => {
+  if (req.apiKey) {
+    return res.status(403).json({ error: "Use a session token to manage credentials." });
+  }
+  db.prepare(
+    `UPDATE user_secrets
+     SET llm_provider = NULL, llm_base_url = NULL, llm_model = NULL, llm_key_enc = NULL, updated_at = ?
+     WHERE user_id = ?`
+  ).run(nowISO(), req.user.id);
+  res.json(publicCredentials(getUserSecrets.get(req.user.id)));
 });
 
 // ---------- Admin ----------
