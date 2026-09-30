@@ -22,6 +22,8 @@ const client = new GlassKeepClient({
   baseUrl: process.env.GLASSKEEP_URL,
   secretKey: process.env.GLASSKEEP_SECRET_KEY,
   token: process.env.GLASSKEEP_TOKEN,
+  apiKey: process.env.GLASSKEEP_API_KEY,
+  agentName: process.env.GLASSKEEP_AGENT_NAME || "Asistente",
 });
 
 function textResult(obj) {
@@ -90,6 +92,10 @@ server.registerTool(
         .string()
         .optional()
         .describe("Términos a buscar; todos deben aparecer (case-insensitive)"),
+      queries: z
+        .union([z.string(), z.array(z.string())])
+        .optional()
+        .describe("Alias de query: términos a buscar (se combinan)"),
       tags: z
         .array(z.string())
         .optional()
@@ -98,12 +104,14 @@ server.registerTool(
       limit: z.number().int().min(1).max(50).optional().describe("Máximo de resultados (default 20)"),
     },
   },
-  async ({ query, tags, include_archived, limit }) => {
+  async ({ query, queries, tags, include_archived, limit }) => {
     try {
+      const effectiveQuery =
+        query || (Array.isArray(queries) ? queries.join(" ") : queries || "");
       const notes = await client.listNotes({ includeArchived: !!include_archived });
       const filtered = notes
         .filter((n) => noteHasTags(n, tags))
-        .filter((n) => noteMatchesQuery(n, query))
+        .filter((n) => noteMatchesQuery(n, effectiveQuery))
         .sort((a, b) =>
           String(b.updated_at || b.timestamp || "").localeCompare(
             String(a.updated_at || a.timestamp || "")
@@ -219,6 +227,164 @@ server.registerTool(
       return textResult(blocks.join("\n\n"));
     } catch (err) {
       return errorResult(`Error armando el contexto: ${err.message}`);
+    }
+  }
+);
+
+const itemSchema = z.object({
+  text: z.string(),
+  done: z.boolean().optional(),
+});
+
+server.registerTool(
+  "create_note",
+  {
+    title: "Crear nota",
+    description:
+      "Crea una nota nueva para el usuario autenticado (texto o checklist). Devuelve la nota creada.",
+    inputSchema: {
+      title: z.string().min(1).describe("Título de la nota"),
+      content: z.string().optional().describe("Contenido markdown (notas de tipo text)"),
+      tags: z.array(z.string()).optional().describe("Tags de la nota"),
+      type: z.enum(["text", "checklist"]).optional().describe("Tipo de nota (default text)"),
+      items: z
+        .array(itemSchema)
+        .optional()
+        .describe("Ítems de la checklist (solo para type=checklist)"),
+    },
+  },
+  async ({ title, content, tags, type, items }) => {
+    try {
+      const noteType = type === "checklist" ? "checklist" : "text";
+      if (noteType === "checklist" && (!items || items.length === 0)) {
+        return errorResult("Una nota checklist necesita al menos un ítem en 'items'.");
+      }
+      const created = await client.createNote({
+        type: noteType,
+        title,
+        content: noteType === "text" ? content || "" : "",
+        tags: tags || [],
+        items: items || [],
+      });
+      return textResult(noteFull(created));
+    } catch (err) {
+      return errorResult(`Error creando la nota: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "update_note",
+  {
+    title: "Actualizar nota",
+    description:
+      "Actualiza parcialmente una nota (lee antes de escribir, nunca sobrescribe campos no enviados). " +
+      "Devuelve la nota actualizada.",
+    inputSchema: {
+      id: z.string().describe("Id de la nota"),
+      title: z.string().optional().describe("Nuevo título"),
+      content: z.string().optional().describe("Nuevo contenido markdown"),
+      tags: z.array(z.string()).optional().describe("Nuevos tags (reemplaza la lista)"),
+      items: z.array(itemSchema).optional().describe("Nuevos ítems (checklist)"),
+      pinned: z.boolean().optional().describe("Fijar/desfijar"),
+      color: z.string().optional().describe("Color de la nota"),
+    },
+  },
+  async ({ id, ...changes }) => {
+    try {
+      const existing = await client.getNote(id);
+      if (!existing) return errorResult(`No existe una nota con id "${id}" para este usuario.`);
+      const payload = {};
+      for (const [key, value] of Object.entries(changes)) {
+        if (value !== undefined) payload[key] = value;
+      }
+      if (Object.keys(payload).length === 0) {
+        return errorResult("No enviaste ningún campo para actualizar.");
+      }
+      await client.patchNote(id, payload);
+      const updated = await client.getNote(id);
+      return textResult(noteFull(updated || existing));
+    } catch (err) {
+      return errorResult(`Error actualizando la nota: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "archive_note",
+  {
+    title: "Archivar o desarchivar nota",
+    description: "Archiva (archived=true, default) o desarchiva (archived=false) una nota.",
+    inputSchema: {
+      id: z.string().describe("Id de la nota"),
+      archived: z.boolean().optional().describe("true archiva, false desarchiva (default true)"),
+    },
+  },
+  async ({ id, archived }) => {
+    try {
+      const existing = await client.getNote(id);
+      if (!existing) return errorResult(`No existe una nota con id "${id}" para este usuario.`);
+      await client.archiveNote(id, archived !== false);
+      const updated = await client.getNote(id);
+      return textResult({ id, title: updated?.title || existing.title, archived: !!updated?.archived });
+    } catch (err) {
+      return errorResult(`Error archivando la nota: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "restore_note",
+  {
+    title: "Restaurar nota de la papelera",
+    description:
+      "Recupera una nota que estaba en la papelera. (Para desarchivar usá archive_note con archived=false.)",
+    inputSchema: {
+      id: z.string().describe("Id de la nota"),
+    },
+  },
+  async ({ id }) => {
+    try {
+      const existing = await client.getNote(id);
+      if (!existing) return errorResult(`No existe una nota con id "${id}" para este usuario.`);
+      await client.restoreNote(id);
+      const updated = await client.getNote(id);
+      return textResult(noteFull(updated || existing));
+    } catch (err) {
+      return errorResult(`Error restaurando la nota: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "delete_note",
+  {
+    title: "Mover nota a la papelera",
+    description:
+      "Mueve una nota a la papelera (recuperable). Requiere confirm=true. Nunca borra de forma permanente.",
+    inputSchema: {
+      id: z.string().describe("Id de la nota"),
+      confirm: z.boolean().describe("Debe ser true para confirmar la operación"),
+    },
+  },
+  async ({ id, confirm }) => {
+    if (confirm !== true) {
+      return errorResult(
+        "Operación cancelada: para mover la nota a la papelera enviá confirm=true (es recuperable)."
+      );
+    }
+    try {
+      const existing = await client.getNote(id);
+      if (!existing) return errorResult(`No existe una nota con id "${id}" para este usuario.`);
+      await client.trashNote(id);
+      return textResult({
+        ok: true,
+        id,
+        title: existing.title,
+        message: "Nota movida a la papelera (recuperable desde la app).",
+      });
+    } catch (err) {
+      return errorResult(`Error moviendo la nota a la papelera: ${err.message}`);
     }
   }
 );

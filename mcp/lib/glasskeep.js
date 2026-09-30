@@ -56,10 +56,11 @@ export function toSummary(note) {
 }
 
 export class GlassKeepClient {
-  constructor({ baseUrl, secretKey, token } = {}) {
+  constructor({ baseUrl, secretKey, token, apiKey, agentName } = {}) {
     this.baseUrl = String(baseUrl || "http://127.0.0.1:8080").replace(/\/+$/, "");
     this.secretKey = secretKey || "";
-    this.token = token || "";
+    this.token = token || apiKey || "";
+    this.agentName = agentName || "Asistente";
   }
 
   async login() {
@@ -82,6 +83,7 @@ export class GlassKeepClient {
     if (auth) {
       if (!this.token) await this.login();
       headers.Authorization = `Bearer ${this.token}`;
+      if (method !== "GET" && this.agentName) headers["X-Edited-By"] = this.agentName;
     }
     let res;
     try {
@@ -99,7 +101,14 @@ export class GlassKeepClient {
       return this.#request(pathname, { method, body, auth }, true);
     }
     if (!res.ok) {
-      throw new Error(`GlassKeep API ${method} ${pathname} → HTTP ${res.status}`);
+      let detail = "";
+      try {
+        const data = await res.json();
+        if (data?.error) detail = `: ${data.error}`;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new Error(`GlassKeep API ${method} ${pathname} → HTTP ${res.status}${detail}`);
     }
     return res.json();
   }
@@ -114,5 +123,34 @@ export class GlassKeepClient {
   async getNote(id) {
     const notes = await this.listNotes({ includeArchived: true });
     return notes.find((n) => String(n.id) === String(id)) || null;
+  }
+
+  async createNote(payload) {
+    return this.#request("/api/notes", { method: "POST", body: payload });
+  }
+
+  async patchNote(id, changes) {
+    return this.#request(`/api/notes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: changes,
+    });
+  }
+
+  async archiveNote(id, archived = true) {
+    return this.#request(`/api/notes/${encodeURIComponent(id)}/archive`, {
+      method: "POST",
+      body: { archived: !!archived },
+    });
+  }
+
+  async restoreNote(id) {
+    return this.#request(`/api/notes/${encodeURIComponent(id)}/restore`, {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  async trashNote(id) {
+    return this.#request(`/api/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 }

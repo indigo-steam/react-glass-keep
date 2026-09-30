@@ -113,7 +113,18 @@ async function main() {
 
   const mcpA = await connectMcp(alice.secretKey);
   const tools = (await mcpA.listTools()).tools.map((t) => t.name).sort();
-  check("expone las 4 herramientas", JSON.stringify(tools) === JSON.stringify(["get_context", "get_note", "list_tags", "search_notes"]), tools.join(","));
+  const expectedTools = [
+    "archive_note",
+    "create_note",
+    "delete_note",
+    "get_context",
+    "get_note",
+    "list_tags",
+    "restore_note",
+    "search_notes",
+    "update_note",
+  ];
+  check("expone las 9 herramientas", JSON.stringify(tools) === JSON.stringify(expectedTools), tools.join(","));
 
   const search = toolJson(await call(mcpA, "search_notes", { query: runId }));
   check("search_notes encuentra la nota de alice", search.notes?.some((n) => n.id === aliceNoteId), JSON.stringify(search).slice(0, 200));
@@ -139,13 +150,59 @@ async function main() {
   const contextText = context.content?.find((c) => c.type === "text")?.text || "";
   check("get_context incluye la nota focal", contextText.includes(runId) && contextText.includes("# NOTA FOCAL"));
 
-  // Isolation: bob's MCP must not see alice's notes.
+  // ---- Write tools ----
+  const createdNote = toolJson(
+    await call(mcpA, "create_note", {
+      title: `${runId} desde MCP`,
+      content: "creada por el asistente",
+      tags: ["McpTest"],
+    })
+  );
+  check("create_note crea la nota", !!createdNote.id && String(createdNote.title).includes("MCP"), JSON.stringify(createdNote).slice(0, 150));
+  created.push({ token: alice.token, id: createdNote.id });
+
+  const byQueries = toolJson(await call(mcpA, "search_notes", { queries: [runId, "MCP"] }));
+  check("search_notes acepta el alias 'queries'", byQueries.notes?.some((n) => n.id === createdNote.id));
+
+  const updated = toolJson(
+    await call(mcpA, "update_note", {
+      id: createdNote.id,
+      title: `${runId} actualizada`,
+      content: "contenido nuevo",
+    })
+  );
+  check(
+    "update_note actualiza título y contenido",
+    String(updated.title).includes("actualizada") && updated.content === "contenido nuevo"
+  );
+
+  const archived = toolJson(await call(mcpA, "archive_note", { id: createdNote.id, archived: true }));
+  check("archive_note archiva", archived.archived === true);
+  const notInActive = toolJson(await call(mcpA, "search_notes", { query: runId }));
+  check("nota archivada fuera de la búsqueda activa", !notInActive.notes?.some((n) => n.id === createdNote.id));
+  const inArchived = toolJson(await call(mcpA, "search_notes", { query: runId, include_archived: true }));
+  check("nota archivada visible con include_archived", inArchived.notes?.some((n) => n.id === createdNote.id));
+
+  const unarchived = toolJson(await call(mcpA, "archive_note", { id: createdNote.id, archived: false }));
+  check("archive_note desarchiva", unarchived.archived === false);
+
+  const noConfirm = await call(mcpA, "delete_note", { id: createdNote.id, confirm: false });
+  check("delete_note sin confirm=true es rechazado", noConfirm.isError === true);
+
+  const deleted = toolJson(await call(mcpA, "delete_note", { id: createdNote.id, confirm: true }));
+  check("delete_note mueve a la papelera", deleted.ok === true);
+
+  // Isolation: bob's MCP must not see or modify alice's notes.
   const mcpB = await connectMcp(bob.secretKey);
   const bobSearch = toolJson(await call(mcpB, "search_notes", { query: runId }));
   check("bob ve su propia nota", bobSearch.notes?.some((n) => n.id === bobNoteId));
   check("bob NO ve la nota de alice", !JSON.stringify(bobSearch).includes(aliceNoteId));
   const aliceAsBob = await call(mcpB, "get_note", { id: aliceNoteId });
   check("bob no puede leer la nota de alice por id", aliceAsBob.isError === true);
+  const isolationWrite = await call(mcpB, "update_note", { id: aliceNoteId, title: "hackeada" });
+  check("bob no puede actualizar la nota de alice", isolationWrite.isError === true);
+  const isolationDelete = await call(mcpB, "delete_note", { id: aliceNoteId, confirm: true });
+  check("bob no puede borrar la nota de alice", isolationDelete.isError === true);
 
   await mcpA.close();
   await mcpB.close();
