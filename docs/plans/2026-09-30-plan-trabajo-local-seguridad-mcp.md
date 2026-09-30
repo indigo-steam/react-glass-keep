@@ -2,7 +2,9 @@
 ## Seguridad → Runtime → Asistente agéntico (Hermes + MCP)
 
 > Documento de trabajo para llevar a la máquina local y ejecutar por fases.
-> Basado en la auditoría técnica del 2026-09-30 (rama `main`, commit `d52b4cc`).
+> Basado en la auditoría técnica del 2026-09-30 (rama `main`, commit `d52b4cc` del historial original).
+> El historial fue reescrito el 2026-09-30 para purgar `data/notes.db*` (ver §4.1), por lo que los
+> hashes de commits anteriores a esa fecha ya no existen en `origin`.
 > Repo desplegado en el servidor: `/home/ubuntu/indigo-notes`, remoto `indigo-steam/react-glass-keep`.
 
 ---
@@ -55,12 +57,15 @@ Usuario → Glass Keep Web UI → Assistant API → Hermes → Cloud LLM
   API_PORT=8080
   NODE_ENV=development
   ALLOW_REGISTRATION=true
+  SEED_DEFAULT_ADMIN=true
   ```
+  El server carga `.env.local` automáticamente en desarrollo (dotenv, nunca en producción).
 - [ ] Arrancar API y web: `npm run dev` (Vite en 5173 con proxy a 8080).
 
 ### 1.3 Base de datos para desarrollo
 - [ ] **Opción A (recomendada): DB limpia.** No copiar producción. Al arrancar,
-  `server/index.js` crea las tablas y siembra `admin/admin` (S7). Registrar un
+  `server/index.js` crea las tablas y siembra `admin/admin` solo si
+  `SEED_DEFAULT_ADMIN=true` (S7, dev únicamente). Registrar un
   usuario de prueba y crear 10-20 notas de ejemplo.
 - [ ] **Opción B: copia anonimizada de producción.** Solo si necesitas volumen
   realista. Copiar con WAL consistente, nunca el `.db` a pelo:
@@ -150,41 +155,50 @@ pueden volver a loguearse.
 **Objetivo**: cerrar S1, S3, S4, S6, S7 y sanear el repositorio. Sin features nuevas.
 
 ### 4.1 Sacar la DB del repositorio (S1)
-- [ ] `git rm --cached data/notes.db data/notes.db-shm data/notes.db-wal`
-- [ ] Reescribir `.gitignore` (hoy tiene un heredoc pegado en las líneas 25-36) dejando reglas limpias para `*.db`, `*.sqlite*`, `.env*`, `data/`.
-- [ ] Purgar del historial con `git filter-repo` (o BFG). Esto reescribe historia:
-  - [ ] Coordinar force-push de `main`.
-  - [ ] Asumir que los hashes bcrypt del repo quedaron expuestos: **rotar la
+- [x] `git rm --cached data/notes.db data/notes.db-shm data/notes.db-wal`
+- [x] Reescribir `.gitignore` (hoy tiene un heredoc pegado en las líneas 25-36) dejando reglas limpias para `*.db`, `*.sqlite*`, `.env*`, `data/`.
+- [x] Purgar del historial con `git filter-repo` (o BFG). Esto reescribe historia:
+  - [x] Coordinar force-push de `main`.
+  - [x] Asumir que los hashes bcrypt del repo quedaron expuestos: **rotar la
     contraseña de cualquier cuenta repetida** (el admin local `admin1`/`apu` del
-    repo).
-- [ ] Verificar: `git log --all -- data/notes.db` no devuelve nada.
+    repo). Verificado: esas cuentas son solo del repo dev, no existen en producción.
+- [x] Verificar: `git log --all -- data/notes.db` no devuelve nada.
 
 ### 4.2 Sanitizar Markdown (S3)
-- [ ] Añadir `dompurify` (`npm i dompurify`).
-- [ ] Sanear en los dos puntos: contenido de nota (`src/App.jsx:5987`) y respuesta IA (`src/App.jsx:2765`).
-- [ ] Prueba XSS: crear nota con contenido `<img src=x onerror="alert(1)">` → no debe ejecutar.
-- [ ] Prueba no-regresión: negritas, listas, código, enlaces y checkboxes siguen renderizando.
+- [x] Añadir `dompurify` (`npm i dompurify`).
+- [x] Sanear en los dos puntos: contenido de nota (`src/App.jsx:5987`) y respuesta IA (`src/App.jsx:2765`), más el tercer parseo en `mdToPlain` (previews de lista).
+- [x] Prueba XSS: crear nota con contenido `<img src=x onerror="alert(1)">` → no debe ejecutar.
+- [x] Prueba no-regresión: negritas, listas, código, enlaces y checkboxes siguen renderizando.
 
 ### 4.3 Endurecer auth (S4, S6, S7)
-- [ ] `/api/users/search` (`server/index.js:1123-1141`): exigir `q` de mínimo 3
+- [x] `/api/users/search` (`server/index.js:1123-1141`): exigir `q` de mínimo 3
   caracteres y devolver solo coincidencias; no listar todo con query vacía.
-- [ ] Rate limit con `express-rate-limit` en `/api/login` y `/api/login/secret`
+- [x] Rate limit con `express-rate-limit` en `/api/login` y `/api/login/secret`
   (p. ej. 10 intentos / 15 min por IP).
-- [ ] Eliminar el seed automático `admin/admin` (`server/index.js:271-282`) o
+- [x] Eliminar el seed automático `admin/admin` (`server/index.js:271-282`) o
   condicionarlo a `SEED_DEFAULT_ADMIN=true` solo en desarrollo.
-- [ ] Fallar al arrancar en producción si `JWT_SECRET` no está definido
+- [x] Fallar al arrancar en producción si `JWT_SECRET` no está definido
   (reemplazar el fallback inseguro de `server/index.js:46`).
 
 ### 4.4 Opcional pero recomendado
-- [ ] Persistir `adminSettings` (hoy en memoria, `server/index.js:1057-1060`) para que el toggle de registro sobreviva reinicios.
-- [ ] Añadir `helmet` y una CSP básica.
-- [ ] Evaluar S5 (token SSE en query): mover a cookie `HttpOnly` o ticket de un
-  solo uso; si se posterga, dejar TODO documentado.
+- [x] Persistir `adminSettings` (hoy en memoria, `server/index.js:1057-1060`) para que el toggle de registro sobreviva reinicios.
+- [x] Añadir `helmet` y una CSP básica.
+- [x] Evaluar S5 (token SSE en query): mover a cookie `HttpOnly` o ticket de un
+  solo uso; si se posterga, dejar TODO documentado. **Postergado** con TODO en
+  `src/App.jsx` (EventSource) y `server/index.js` (`authFromQueryOrHeader`).
 
 ### 4.5 Verificación de la fase
-- [ ] `npm run build` limpio.
-- [ ] Pruebas manuales: login, registro (con flag), CRUD notas, colaboración, SSE en dos pestañas.
-- [ ] Desplegar según §2.2 y repetir pruebas en producción.
+- [x] `npm run build` limpio.
+- [x] Pruebas manuales: login, registro (con flag), CRUD notas, colaboración, SSE en dos pestañas.
+- [x] Desplegar según §2.2 y repetir pruebas en producción.
+
+**✅ Completada el 2026-09-30** — commit `b8a0925`, imagen `indigo-notes:security-20260930`, backup previo `notes-20260930-074202.db`. Notas:
+- Bug preexistente encontrado y corregido: `src/ai.js` importaba `i18n` dos veces y rompía `npm run build` (commit `58e0ff9`).
+- `local_docker_run.sh` ya no hardcodea el secreto: exige `JWT_SECRET` o lo lee de `.env.local` (S2 lado repositorio).
+- El server ahora carga `.env.local` en desarrollo (dotenv, solo fuera de producción) — ver §1.2.
+- `adminSettings` se persiste en `admin-settings.json` junto a la DB (sin cambios de esquema).
+- La rotación de secreto y el fail-fast dejan `dev-secret-please-change` solo como fallback de desarrollo.
+- Force-push del historial reescrito el 2026-09-30; el clon del VPS quedó sincronizado con `git reset --hard origin/main`.
 
 **Criterio de hecho**: los 7 hallazgos cerrados o con TODO explícito; ningún secreto en repo.
 
@@ -353,4 +367,4 @@ Puede construirse contra `GET /api/notes` sin tocar el backend.
 
 ---
 
-*Última actualización: 2026-09-30. Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
+*Última actualización: 2026-09-30. Fases 1 y 2 completadas y desplegadas (commits `546f3f1`→`b8a0925`, imagen `indigo-notes:security-20260930`). Mantener este documento actualizado al cerrar cada fase (marcar checkboxes y anotar fecha/commit del despliegue).*
