@@ -790,6 +790,7 @@ app.post("/api/notes", auth, (req, res) => {
     updated_at: nowISO(),
   };
   insertNote.run(n);
+  updateNoteWithEditor.run(nowISO(), editorName(req), nowISO(), n.id);
   res.status(201).json({
     id: n.id,
     type: n.type,
