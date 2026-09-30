@@ -95,6 +95,7 @@ Usuario → Glass Keep Web UI → Assistant API → Hermes → Cloud LLM
   ```bash
   docker rm -f indigo-notes-old 2>/dev/null || true
   docker rename indigo-notes indigo-notes-old
+  docker stop indigo-notes-old   # libera el puerto 8082 para el contenedor nuevo
   docker run -d --name indigo-notes --restart unless-stopped \
     -p 127.0.0.1:8082:8080 \
     --env-file ~/.glass-keep/indigo-notes.env \
@@ -117,8 +118,8 @@ Usuario → Glass Keep Web UI → Assistant API → Hermes → Cloud LLM
 
 **Objetivo**: cerrar S2 mientras se trabaja localmente. Es independiente del resto.
 
-- [ ] Generar secreto real: `openssl rand -base64 48`
-- [ ] Crear `~/.glass-keep/indigo-notes.env` en el servidor (chmod 600):
+- [x] Generar secreto real: `openssl rand -base64 48`
+- [x] Crear `~/.glass-keep/indigo-notes.env` en el servidor (chmod 600):
   ```
   NODE_ENV=production
   API_PORT=8080
@@ -127,11 +128,18 @@ Usuario → Glass Keep Web UI → Assistant API → Hermes → Cloud LLM
   ADMIN_EMAILS=adminniku
   ALLOW_REGISTRATION=false
   ```
-- [ ] Recrear el contenedor con `--env-file` y el secreto nuevo (mismo procedimiento §2.2).
-- [ ] Verificar que el secreto viejo ya no sirve: un JWT firmado con
+- [x] Recrear el contenedor con `--env-file` y el secreto nuevo (mismo procedimiento §2.2).
+- [x] Verificar que el secreto viejo ya no sirve: un JWT firmado con
   `dev-please-change` debe recibir 401 en `/api/notes`.
-- [ ] Anotar fecha de rotación. Consecuencia esperada: **todos los usuarios
+- [x] Anotar fecha de rotación. Consecuencia esperada: **todos los usuarios
   deben volver a iniciar sesión** (los JWT viejos quedan inválidos).
+
+**✅ Completada el 2026-09-30** (backup previo: `notes-20260930-072506.db`,
+verificado con `integrity_check` ok y 260 notas / 2 usuarios). Verificación:
+JWT firmado con `dev-please-change` → 401; `/api/health` ok local y vía
+`https://notes.indigosteam.com`. Contenedor anterior conservado como
+`indigo-notes-old` para rollback; eliminar tras confirmar que los usuarios
+pueden volver a loguearse.
 
 **Criterio de hecho**: `docker inspect indigo-notes` ya no muestra el secreto público; usuarios pueden loguearse de nuevo.
 
