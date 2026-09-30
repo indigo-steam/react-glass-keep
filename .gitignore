@@ -23,22 +23,17 @@ dist-ssr
 *.sln
 *.sw?
 
-# from repo root
-cat >> .gitignore <<'EOF'
-# SQLite
+# Databases (never commit)
+*.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-*.db
+*.sqlite-journal
+data/
 
-# Env
+# Env (never commit secrets)
 .env
 .env.*
-EOF
-
-
-# SQLite databases (server)
-server/*.sqlite
-server/*.sqlite-wal
-server/*.sqlite-shm
-server/*.sqlite-journal
+!.env.example
