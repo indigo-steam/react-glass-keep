@@ -138,7 +138,7 @@
   "toast": {
     "aiEnabled": "AI Assistant enabled",
     "assistantSaved": "Assistant updated and applied",
-    "assistantSavedPending": "Saved. It will be applied when the assistant restarts",
+    "assistantSavedPending": "Saved, but could not be applied. Try saving again",
     "assistantRemoved": "Assistant API key removed",
     "aiDisabled": "AI Assistant disabled",
     "exportSuccess": "Notes exported successfully",

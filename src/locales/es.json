@@ -138,7 +138,7 @@
   "toast": {
     "aiEnabled": "Asistente de IA activado",
     "assistantSaved": "Asistente actualizado y aplicado",
-    "assistantSavedPending": "Guardado. Se aplicará al reiniciar el asistente",
+    "assistantSavedPending": "Guardado, pero no se pudo aplicar. Reintentá guardando de nuevo",
     "assistantRemoved": "API key del asistente eliminada",
     "aiDisabled": "Asistente de IA desactivado",
     "exportSuccess": "Notas exportadas exitosamente",

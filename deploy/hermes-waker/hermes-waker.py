@@ -10,6 +10,7 @@ Endpoints (all require `Authorization: Bearer $WAKER_TOKEN`):
   POST /instances/<id>/start   -> docker start hermes-u<id>
   POST /instances/<id>/stop    -> docker stop  hermes-u<id>
   POST /instances/<id>/llm     -> apply LLM credentials/model to hermes-u<id>
+                                  (starts the container first if it is stopped)
                                   body: {"provider","api_key","model","base_url"}
 
 Env:
@@ -24,6 +25,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("WAKER_PORT", "8099"))
@@ -85,8 +87,19 @@ def apply_llm(id_str, payload):
     else:
         base_url = "https://openrouter.ai/api/v1"
 
-    if status_of(name) == "missing":
+    status = status_of(name)
+    if status == "missing":
         return 404, {"error": f"{name} not found"}
+    if status != "running":
+        start_result = docker(["start", name])
+        if start_result.returncode != 0:
+            detail = (start_result.stderr or start_result.stdout or "docker start failed").strip()[:300]
+            return 500, {"error": detail}
+        deadline = time.monotonic() + 30
+        while status_of(name) != "running" and time.monotonic() < deadline:
+            time.sleep(1)
+        if status_of(name) != "running":
+            return 500, {"error": f"{name} did not reach running state"}
 
     env_var = "OPENROUTER_API_KEY" if provider == "openrouter" else "OPENAI_API_KEY"
     env_result = set_env_var(name, env_var, api_key)
