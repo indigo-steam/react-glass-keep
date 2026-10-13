@@ -2074,12 +2074,16 @@ app.get("/api/calendar/callback", async (req, res) => {
     return res.status(503).send("Google OAuth not configured.");
   }
   try {
+    console.log(`[calendar callback] user=${payload.uid} code received, exchanging...`);
     const tokenData = await exchangeGoogleCode(code);
+    console.log(`[calendar callback] token response keys:`, Object.keys(tokenData).join(","));
     if (!tokenData.refresh_token) {
+      console.error("[calendar callback] missing refresh_token");
       return res.status(400).send("Google did not return a refresh token. Please revoke access and try again.");
     }
     const accessToken = tokenData.access_token;
     const userInfo = await fetchGoogleUserInfo(accessToken);
+    console.log(`[calendar callback] userinfo email:`, userInfo.email);
     setGoogleTokens.run({
       refresh_enc: encryptSecret(tokenData.refresh_token),
       access_enc: encryptSecret(accessToken),
@@ -2089,10 +2093,11 @@ app.get("/api/calendar/callback", async (req, res) => {
       updated_at: nowISO(),
       user_id: payload.uid,
     });
+    console.log(`[calendar callback] tokens saved for user=${payload.uid}`);
     const redirectBase = GOOGLE_REDIRECT_URI.replace("/api/calendar/callback", "");
     res.redirect(`${redirectBase}/#/settings?calendar=connected`);
   } catch (err) {
-    console.error("calendar callback error:", err.message);
+    console.error("[calendar callback] error:", err.message);
     res.status(500).send(`Failed to connect Google Calendar: ${err.message}`);
   }
 });
