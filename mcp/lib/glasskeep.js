@@ -153,4 +153,38 @@ export class GlassKeepClient {
   async trashNote(id) {
     return this.#request(`/api/notes/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
+
+  async getCurrentTime(timezone = "America/Bogota") {
+    return this.#request(`/api/calendar/time?timezone=${encodeURIComponent(timezone)}`);
+  }
+
+  async listCalendarEvents({ start, end, max_results } = {}) {
+    const params = new URLSearchParams();
+    if (start) params.set("timeMin", start);
+    if (end) params.set("timeMax", end);
+    if (max_results) params.set("maxResults", String(max_results));
+    return this.#request(`/api/calendar/events?${params.toString()}`);
+  }
+
+  async createCalendarEvent({ summary, start, end, description }) {
+    return this.#request("/api/calendar/events", {
+      method: "POST",
+      body: { summary, start, end, description },
+    });
+  }
+
+  async getWorkdayStatus() {
+    return this.#request("/api/calendar/workday");
+  }
+
+  async startWorkday() {
+    return this.#request("/api/calendar/workday/start", { method: "POST", body: {} });
+  }
+
+  async endWorkday({ end_time } = {}) {
+    return this.#request("/api/calendar/workday/end", {
+      method: "POST",
+      body: end_time ? { end: end_time } : {},
+    });
+  }
 }

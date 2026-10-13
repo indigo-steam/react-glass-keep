@@ -43,6 +43,8 @@ A sleek, Keep-style notes app with Markdown, checklists, images, tag chips, colo
     (search, read, create, update, archive); it never touches the database directly.
   * **Durable memory** — instructions you give ("when I tell you the mileage, update note X")
     persist across sessions and devices.
+  * **Google Calendar integration** — optionally log workdays and create events via the
+    assistant (each user connects their own Google account; BYO Google OAuth credentials).
   * **Bring your own agent too** — the MCP also works with Claude Desktop, your own Hermes,
     Cursor, etc. (see [`mcp/README.md`](mcp/README.md)).
 

@@ -241,13 +241,32 @@ CREATE TABLE IF NOT EXISTS user_secrets (
   }
 })();
 
-// user_secrets migrations (assistant credentials)
+// user_secrets migrations (assistant credentials + Google Calendar)
 (function ensureUserSecretsColumns() {
   try {
     const cols = db.prepare(`PRAGMA table_info(user_secrets)`).all();
-    if (cols.length && !cols.some((c) => c.name === "hermes_key_enc")) {
-      db.exec(`ALTER TABLE user_secrets ADD COLUMN hermes_key_enc TEXT`);
-    }
+    const names = new Set(cols.map((c) => c.name));
+    const tx = db.transaction(() => {
+      if (!names.has("hermes_key_enc")) {
+        db.exec(`ALTER TABLE user_secrets ADD COLUMN hermes_key_enc TEXT`);
+      }
+      if (!names.has("google_refresh_token_enc")) {
+        db.exec(`ALTER TABLE user_secrets ADD COLUMN google_refresh_token_enc TEXT`);
+      }
+      if (!names.has("google_access_token_enc")) {
+        db.exec(`ALTER TABLE user_secrets ADD COLUMN google_access_token_enc TEXT`);
+      }
+      if (!names.has("google_token_expires_at")) {
+        db.exec(`ALTER TABLE user_secrets ADD COLUMN google_token_expires_at TEXT`);
+      }
+      if (!names.has("google_calendar_connected")) {
+        db.exec(`ALTER TABLE user_secrets ADD COLUMN google_calendar_connected INTEGER NOT NULL DEFAULT 0`);
+      }
+      if (!names.has("google_calendar_email")) {
+        db.exec(`ALTER TABLE user_secrets ADD COLUMN google_calendar_email TEXT`);
+      }
+    });
+    tx();
   } catch {
     // ignore if table not created yet or ALTER not supported
   }
@@ -1652,6 +1671,171 @@ const ASSISTANT_IDLE_MS = Math.max(0, Number(process.env.ASSISTANT_IDLE_MINUTES 
 const ASSISTANT_MAX_MESSAGES = 60;
 const ASSISTANT_MAX_CHARS = 40000;
 
+// Google Calendar OAuth
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "";
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const GOOGLE_OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_CALENDAR_API_URL = "https://www.googleapis.com/calendar/v3";
+const DEFAULT_TIMEZONE = "America/Bogota";
+
+function generateOAuthState(userId) {
+  const payload = { uid: userId, nonce: crypto.randomBytes(16).toString("hex") };
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "10m" });
+}
+
+function verifyOAuthState(state) {
+  try {
+    return jwt.verify(state, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+async function exchangeGoogleCode(code) {
+  const params = new URLSearchParams({
+    code,
+    client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    grant_type: "authorization_code",
+  });
+  const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Google token exchange failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+async function refreshGoogleAccessToken(refreshToken) {
+  const params = new URLSearchParams({
+    refresh_token: refreshToken,
+    client_id: GOOGLE_CLIENT_ID,
+    client_secret: GOOGLE_CLIENT_SECRET,
+    grant_type: "refresh_token",
+  });
+  const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Google refresh failed: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+async function fetchGoogleUserInfo(accessToken) {
+  const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    throw new Error(`Google userinfo failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+const getCalendarSecrets = db.prepare(
+  `SELECT google_refresh_token_enc, google_access_token_enc, google_token_expires_at,
+          google_calendar_connected, google_calendar_email
+   FROM user_secrets WHERE user_id = ?`
+);
+
+const setGoogleTokens = db.prepare(
+  `UPDATE user_secrets
+   SET google_refresh_token_enc = @refresh_enc,
+       google_access_token_enc = @access_enc,
+       google_token_expires_at = @expires_at,
+       google_calendar_connected = @connected,
+       google_calendar_email = @email,
+       updated_at = @updated_at
+   WHERE user_id = @user_id`
+);
+
+const clearGoogleTokens = db.prepare(
+  `UPDATE user_secrets
+   SET google_refresh_token_enc = NULL,
+       google_access_token_enc = NULL,
+       google_token_expires_at = NULL,
+       google_calendar_connected = 0,
+       google_calendar_email = NULL,
+       updated_at = @updated_at
+   WHERE user_id = @user_id`
+);
+
+async function getValidAccessToken(userId) {
+  const row = getCalendarSecrets.get(userId);
+  if (!row || !row.google_calendar_connected) {
+    throw new Error("Google Calendar not connected");
+  }
+  const accessToken = decryptSecret(row.google_access_token_enc);
+  const expiresAt = row.google_token_expires_at ? new Date(row.google_token_expires_at) : null;
+  const now = new Date();
+  if (expiresAt && expiresAt > new Date(now.getTime() + 60000)) {
+    return accessToken;
+  }
+  const refreshToken = decryptSecret(row.google_refresh_token_enc);
+  const refreshed = await refreshGoogleAccessToken(refreshToken);
+  const newAccessToken = refreshed.access_token;
+  const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
+  setGoogleTokens.run({
+    refresh_enc: row.google_refresh_token_enc, // keep existing
+    access_enc: encryptSecret(newAccessToken),
+    expires_at: newExpiresAt,
+    connected: 1,
+    email: row.google_calendar_email,
+    updated_at: nowISO(),
+    user_id: userId,
+  });
+  return newAccessToken;
+}
+
+async function googleCalendarFetch(userId, path, options = {}) {
+  const accessToken = await getValidAccessToken(userId);
+  const url = `${GOOGLE_CALENDAR_API_URL}${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+    signal: options.signal || AbortSignal.timeout(20000),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Google Calendar API ${options.method || "GET"} ${path} → ${res.status}: ${text}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function toBogotaISO(date = new Date()) {
+  return date.toLocaleString("sv-SE", { timeZone: DEFAULT_TIMEZONE }).replace(" ", "T") + "-05:00";
+}
+
+function startOfDayInBogota(date = new Date()) {
+  const d = new Date(date.toLocaleString("en-US", { timeZone: DEFAULT_TIMEZONE }));
+  d.setHours(0, 0, 0, 0);
+  return toBogotaISO(d);
+}
+
+function endOfDayInBogota(date = new Date()) {
+  const d = new Date(date.toLocaleString("en-US", { timeZone: DEFAULT_TIMEZONE }));
+  d.setHours(23, 59, 59, 999);
+  return toBogotaISO(d);
+}
+
 function hermesBase(userId) {
   return HERMES_BASE_TEMPLATE.replace("{id}", String(userId));
 }
@@ -1767,10 +1951,25 @@ app.post("/api/assistant/chat", auth, assistantChatLimiter, async (req, res) => 
     totalChars += content.length;
     return { role, content };
   });
+
+  const systemMessage = {
+    role: "system",
+    content:
+      `Eres el asistente personal de Glass Keep. La hora actual del usuario es ${toBogotaISO(new Date())} (zona horaria America/Bogota).\n\n` +
+      `Pautas:\n` +
+      `- Antes de crear o consultar eventos en Google Calendar, usá las herramientas disponibles.\n` +
+      `- Cuando el usuario diga "inicio jornada laboral", usá la herramienta \`start_workday\` para registrar el inicio.\n` +
+      `- Cuando diga "fin jornada laboral", usá la herramienta \`end_workday\` para cerrar la jornada abierta de hoy.\n` +
+      `- Siempre confirmá los detalles (título, hora, descripción) antes de crear un evento que no sea de jornada.\n` +
+      `- Si el usuario no tiene Google Calendar conectado, explicale cómo hacerlo desde Configuración.`,
+  };
+  const cleanWithSystem = [systemMessage, ...clean];
+  totalChars += systemMessage.content.length;
+
   if (totalChars > ASSISTANT_MAX_CHARS) {
     return res.status(400).json({ error: "El contexto enviado es demasiado grande." });
   }
-  if (clean[clean.length - 1].role !== "user") {
+  if (cleanWithSystem[cleanWithSystem.length - 1].role !== "user") {
     return res.status(400).json({ error: "El último mensaje debe ser del usuario." });
   }
 
@@ -1799,7 +1998,7 @@ app.post("/api/assistant/chat", auth, assistantChatLimiter, async (req, res) => 
         "Content-Type": "application/json",
         Authorization: `Bearer ${hermesKey}`,
       },
-      body: JSON.stringify({ model: "hermes-agent", stream: true, messages: clean }),
+      body: JSON.stringify({ model: "hermes-agent", stream: true, messages: cleanWithSystem }),
       signal: controller.signal,
     });
   } catch (err) {
@@ -1832,6 +2031,307 @@ app.post("/api/assistant/chat", auth, assistantChatLimiter, async (req, res) => 
     /* upstream ended or client aborted */
   }
   res.end();
+});
+
+// ---------- Google Calendar OAuth endpoints ----------
+app.get("/api/calendar/status", auth, (req, res) => {
+  const row = getCalendarSecrets.get(req.user.id);
+  res.json({
+    connected: !!(row && row.google_calendar_connected),
+    email: row?.google_calendar_email || null,
+  });
+});
+
+app.get("/api/calendar/auth-url", auth, (req, res) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
+    return res.status(503).json({ error: "Google OAuth not configured on server." });
+  }
+  const state = generateOAuthState(req.user.id);
+  const url =
+    `${GOOGLE_OAUTH_AUTH_URL}?` +
+    new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      response_type: "code",
+      scope: GOOGLE_CALENDAR_SCOPE,
+      access_type: "offline",
+      prompt: "consent",
+      state,
+    }).toString();
+  res.json({ url });
+});
+
+app.get("/api/calendar/callback", async (req, res) => {
+  const { code, state } = req.query;
+  if (!code || !state) {
+    return res.status(400).send("Missing code or state.");
+  }
+  const payload = verifyOAuthState(state);
+  if (!payload || !payload.uid) {
+    return res.status(400).send("Invalid or expired state.");
+  }
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    return res.status(503).send("Google OAuth not configured.");
+  }
+  try {
+    const tokenData = await exchangeGoogleCode(code);
+    if (!tokenData.refresh_token) {
+      return res.status(400).send("Google did not return a refresh token. Please revoke access and try again.");
+    }
+    const accessToken = tokenData.access_token;
+    const userInfo = await fetchGoogleUserInfo(accessToken);
+    setGoogleTokens.run({
+      refresh_enc: encryptSecret(tokenData.refresh_token),
+      access_enc: encryptSecret(accessToken),
+      expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
+      connected: 1,
+      email: userInfo.email || null,
+      updated_at: nowISO(),
+      user_id: payload.uid,
+    });
+    const redirectBase = GOOGLE_REDIRECT_URI.replace("/api/calendar/callback", "");
+    res.redirect(`${redirectBase}/#/settings?calendar=connected`);
+  } catch (err) {
+    console.error("calendar callback error:", err.message);
+    res.status(500).send(`Failed to connect Google Calendar: ${err.message}`);
+  }
+});
+
+app.post("/api/calendar/disconnect", auth, async (req, res) => {
+  const row = getCalendarSecrets.get(req.user.id);
+  if (row?.google_refresh_token_enc) {
+    try {
+      const refreshToken = decryptSecret(row.google_refresh_token_enc);
+      await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: refreshToken }).toString(),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (err) {
+      console.error("revoke token error:", err.message);
+    }
+  }
+  clearGoogleTokens.run({ updated_at: nowISO(), user_id: req.user.id });
+  res.json({ disconnected: true });
+});
+
+// ---------- Calendar REST endpoints ----------
+app.get("/api/calendar/events", auth, async (req, res) => {
+  try {
+    const timeMin = req.query.timeMin || startOfDayInBogota();
+    const timeMax = req.query.timeMax || endOfDayInBogota();
+    const maxResults = Math.min(250, Math.max(1, Number(req.query.maxResults) || 50));
+    const data = await googleCalendarFetch(
+      req.user.id,
+      `/calendars/primary/events?${new URLSearchParams({
+        timeMin,
+        timeMax,
+        maxResults: String(maxResults),
+        singleEvents: "true",
+        orderBy: "startTime",
+      }).toString()}`
+    );
+    res.json({
+      items: (data.items || []).map((ev) => ({
+        id: ev.id,
+        summary: ev.summary,
+        start: ev.start,
+        end: ev.end,
+        status: ev.status,
+        extendedProperties: ev.extendedProperties,
+      })),
+    });
+  } catch (err) {
+    console.error("list events error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post("/api/calendar/events", auth, async (req, res) => {
+  try {
+    const { summary, start, end, description } = req.body || {};
+    if (!summary || !start) {
+      return res.status(400).json({ error: "summary and start are required" });
+    }
+    const startDate = new Date(start);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: "Invalid start date" });
+    }
+    const endDate = end ? new Date(end) : new Date(startDate.getTime() + 60 * 60 * 1000);
+    const event = {
+      summary,
+      description: description || "",
+      start: { dateTime: toBogotaISO(startDate), timeZone: DEFAULT_TIMEZONE },
+      end: { dateTime: toBogotaISO(endDate), timeZone: DEFAULT_TIMEZONE },
+    };
+    const data = await googleCalendarFetch(req.user.id, "/calendars/primary/events", {
+      method: "POST",
+      body: JSON.stringify(event),
+    });
+    res.json({
+      id: data.id,
+      summary: data.summary,
+      start: data.start,
+      end: data.end,
+      status: data.status,
+    });
+  } catch (err) {
+    console.error("create event error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.get("/api/calendar/time", auth, (req, res) => {
+  const timezone = req.query.timezone || DEFAULT_TIMEZONE;
+  try {
+    const now = new Date();
+    const iso = now.toLocaleString("sv-SE", { timeZone: timezone }).replace(" ", "T") + "-05:00";
+    res.json({ timezone, now: iso });
+  } catch (err) {
+    res.status(400).json({ error: `Invalid timezone: ${err.message}` });
+  }
+});
+
+app.get("/api/calendar/workday", auth, async (req, res) => {
+  try {
+    const timeMin = startOfDayInBogota();
+    const timeMax = endOfDayInBogota();
+    const data = await googleCalendarFetch(
+      req.user.id,
+      `/calendars/primary/events?${new URLSearchParams({
+        timeMin,
+        timeMax,
+        q: "Jornada laboral",
+        singleEvents: "true",
+        orderBy: "startTime",
+      }).toString()}`
+    );
+    const events = data.items || [];
+    const open = events.find(
+      (ev) =>
+        ev.extendedProperties?.private?.glassKeepWorkday === "true" &&
+        ev.end?.dateTime &&
+        new Date(ev.end.dateTime).getTime() - new Date(ev.start.dateTime).getTime() <= 2 * 60 * 1000
+    );
+    res.json({
+      open: !!open,
+      event: open
+        ? { id: open.id, summary: open.summary, start: open.start.dateTime, end: open.end.dateTime }
+        : null,
+    });
+  } catch (err) {
+    console.error("workday status error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post("/api/calendar/workday/start", auth, async (req, res) => {
+  try {
+    const existing = await googleCalendarFetch(
+      req.user.id,
+      `/calendars/primary/events?${new URLSearchParams({
+        timeMin: startOfDayInBogota(),
+        timeMax: endOfDayInBogota(),
+        q: "Jornada laboral",
+        singleEvents: "true",
+      }).toString()}`
+    );
+    const events = existing.items || [];
+    const alreadyOpen = events.find(
+      (ev) =>
+        ev.extendedProperties?.private?.glassKeepWorkday === "true" &&
+        ev.end?.dateTime &&
+        new Date(ev.end.dateTime).getTime() - new Date(ev.start.dateTime).getTime() <= 2 * 60 * 1000
+    );
+    if (alreadyOpen) {
+      return res.status(409).json({ error: "Ya hay una jornada abierta hoy.", event: alreadyOpen });
+    }
+    const start = new Date();
+    const end = new Date(start.getTime() + 60 * 1000);
+    const data = await googleCalendarFetch(req.user.id, "/calendars/primary/events", {
+      method: "POST",
+      body: JSON.stringify({
+        summary: "Jornada laboral",
+        description: "Inicio de jornada laboral registrado por Glass Keep",
+        start: { dateTime: toBogotaISO(start), timeZone: DEFAULT_TIMEZONE },
+        end: { dateTime: toBogotaISO(end), timeZone: DEFAULT_TIMEZONE },
+        extendedProperties: { private: { glassKeepWorkday: "true" } },
+      }),
+    });
+    res.json({ id: data.id, summary: data.summary, start: data.start, end: data.end });
+  } catch (err) {
+    console.error("start workday error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post("/api/calendar/workday/end", auth, async (req, res) => {
+  try {
+    const endTime = req.body?.end ? new Date(req.body.end) : new Date();
+    const data = await googleCalendarFetch(
+      req.user.id,
+      `/calendars/primary/events?${new URLSearchParams({
+        timeMin: startOfDayInBogota(),
+        timeMax: endOfDayInBogota(),
+        q: "Jornada laboral",
+        singleEvents: "true",
+      }).toString()}`
+    );
+    const events = data.items || [];
+    const open = events.find(
+      (ev) =>
+        ev.extendedProperties?.private?.glassKeepWorkday === "true" &&
+        ev.end?.dateTime &&
+        new Date(ev.end.dateTime).getTime() - new Date(ev.start.dateTime).getTime() <= 2 * 60 * 1000
+    );
+    if (!open) {
+      return res.status(404).json({ error: "No hay una jornada abierta para hoy." });
+    }
+    const updated = await googleCalendarFetch(
+      req.user.id,
+      `/calendars/primary/events/${encodeURIComponent(open.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          end: { dateTime: toBogotaISO(endTime), timeZone: DEFAULT_TIMEZONE },
+        }),
+      }
+    );
+    res.json({ id: updated.id, summary: updated.summary, start: updated.start, end: updated.end });
+  } catch (err) {
+    console.error("end workday error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.patch("/api/calendar/events/:id", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { end } = req.body || {};
+    if (!end) {
+      return res.status(400).json({ error: "end is required" });
+    }
+    const endDate = new Date(end);
+    if (isNaN(endDate.getTime())) {
+      return res.status(400).json({ error: "Invalid end date" });
+    }
+    const data = await googleCalendarFetch(req.user.id, `/calendars/primary/events/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        end: { dateTime: toBogotaISO(endDate), timeZone: DEFAULT_TIMEZONE },
+      }),
+    });
+    res.json({
+      id: data.id,
+      summary: data.summary,
+      start: data.start,
+      end: data.end,
+    });
+  } catch (err) {
+    console.error("patch event error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // ---------- Health ----------

@@ -74,7 +74,14 @@
     "spanish": "Spanish",
     "languageModalTitle": "Choose language",
     "languageModalDesc": "Select the app language. Changes apply instantly.",
-    "languageChanged": "Language changed to {{language}}"
+    "languageChanged": "Language changed to {{language}}",
+    "googleCalendar": "Google Calendar",
+    "googleCalendarDesc": "Connect your calendar so the assistant can log workdays and events.",
+    "googleCalendarConnected": "Connected as {{email}}",
+    "googleCalendarNotConnected": "Not connected",
+    "googleCalendarConnect": "Connect Google Calendar",
+    "googleCalendarDisconnect": "Disconnect",
+    "googleCalendarConnecting": "Connecting..."
   },
   "admin": {
     "title": "Admin Panel",
@@ -149,6 +156,8 @@
     "notesDeleted": "{{count}} notes deleted",
     "noteArchived": "Note archived",
     "noteUnarchived": "Note unarchived",
+    "calendarConnected": "Google Calendar connected",
+    "calendarDisconnected": "Google Calendar disconnected",
     "error": "An error occurred"
   },
   "confirm": {
@@ -158,6 +167,8 @@
     "enableAiMessage": "The assistant uses your own API key (BYOK) and your personal agent. Your notes are only queried with your credential. Enable AI search?",
     "removeAssistantTitle": "Remove the assistant API key?",
     "removeAssistantMessage": "The assistant will be disabled until you add another key. Your notes are not touched.",
+    "disconnectCalendarTitle": "Disconnect Google Calendar?",
+    "disconnectCalendarMessage": "The assistant will no longer be able to create or check events.",
     "confirmAction": "Confirm Action"
   },
   "theme": {

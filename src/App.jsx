@@ -1798,7 +1798,7 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
 }
 
 /** ---------- Settings Panel ---------- */
-function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, assistantCreds, savingAssistant, onSaveAssistantCreds, onClearAssistantCreds, showGenericConfirm, showToast, i18n, t }) {
+function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, assistantCreds, savingAssistant, onSaveAssistantCreds, onClearAssistantCreds, calendarStatus, onConnectCalendar, onDisconnectCalendar, showGenericConfirm, showToast, i18n, t }) {
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [assistantFormOpen, setAssistantFormOpen] = useState(false);
   const [assistantProvider, setAssistantProvider] = useState('openrouter');
@@ -2080,6 +2080,31 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Google Calendar */}
+              <div className="rounded-xl border border-[var(--border-light)] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{t('settings.googleCalendar')}</div>
+                    <div className="text-sm text-gray-500">
+                      {calendarStatus?.connected
+                        ? t('settings.googleCalendarConnected', { email: calendarStatus.email })
+                        : t('settings.googleCalendarNotConnected')}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {calendarStatus?.connected ? (
+                      <button type="button" onClick={onDisconnectCalendar} className={btnDanger}>
+                        {t('settings.googleCalendarDisconnect')}
+                      </button>
+                    ) : (
+                      <button type="button" onClick={onConnectCalendar} className={btnPrimary}>
+                        {t('settings.googleCalendarConnect')}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between">
@@ -3549,6 +3574,10 @@ export default function App() {
   const [savingAssistant, setSavingAssistant] = useState(false);
   const [assistantAvailable, setAssistantAvailable] = useState(false);
 
+  // Google Calendar connection status
+  const [calendarStatus, setCalendarStatus] = useState({ connected: false, email: null });
+  const [loadingCalendarStatus, setLoadingCalendarStatus] = useState(false);
+
   // Assistant availability is server-side (per-user Hermes instance)
   useEffect(() => {
     if (!token) return;
@@ -3615,6 +3644,73 @@ export default function App() {
     } catch (err) {
       showToast(err?.message || t('toast.error'), "error");
     }
+  };
+
+  const fetchCalendarStatus = async () => {
+    const auth = getAuth();
+    const tkn = auth?.token;
+    if (!tkn) return;
+    setLoadingCalendarStatus(true);
+    try {
+      const res = await fetch("/api/calendar/status", {
+        headers: { Authorization: `Bearer ${tkn}` },
+      });
+      if (res.ok) {
+        setCalendarStatus(await res.json());
+      } else {
+        setCalendarStatus({ connected: false, email: null });
+      }
+    } catch (e) {
+      setCalendarStatus({ connected: false, email: null });
+    } finally {
+      setLoadingCalendarStatus(false);
+    }
+  };
+
+  const handleConnectCalendar = async () => {
+    try {
+      const auth = getAuth();
+      const tkn = auth?.token;
+      const res = await fetch("/api/calendar/auth-url", {
+        headers: { Authorization: `Bearer ${tkn}` },
+      });
+      if (!res.ok) {
+        showToast(t('errors.serverResponded', { status: res.status }), "error");
+        return;
+      }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch (e) {
+      showToast(e.message || t('errors.serverResponded', { status: 'network' }), "error");
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    showGenericConfirm({
+      title: t('confirm.disconnectCalendarTitle'),
+      message: t('confirm.disconnectCalendarMessage'),
+      confirmText: t('common.remove'),
+      cancelText: t('common.cancel'),
+      danger: true,
+      onConfirm: async () => {
+        try {
+          const auth = getAuth();
+          const tkn = auth?.token;
+          const res = await fetch("/api/calendar/disconnect", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${tkn}` },
+          });
+          if (res.ok) {
+            setCalendarStatus({ connected: false, email: null });
+            showToast(t('toast.calendarDisconnected'), "success");
+          } else {
+            showToast(t('errors.serverResponded', { status: res.status }), "error");
+          }
+        } catch (e) {
+          showToast(e.message || t('errors.serverResponded', { status: 'network' }), "error");
+        }
+      },
+    });
   };
 
   // Session conversation history (per user, localStorage) so the assistant
@@ -4014,6 +4110,26 @@ export default function App() {
 
   // Settings panel state
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+
+  useEffect(() => {
+    fetchCalendarStatus();
+  }, []);
+
+  useEffect(() => {
+    if (settingsPanelOpen) {
+      fetchCalendarStatus();
+    }
+  }, [settingsPanelOpen]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("calendar") === "connected") {
+      showToast(t('toast.calendarConnected'), "success");
+      fetchCalendarStatus();
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+  }, []);
 
   // Derived: Active note + edited text
   const activeNoteObj = useMemo(
@@ -7116,6 +7232,9 @@ export default function App() {
         savingAssistant={savingAssistant}
         onSaveAssistantCreds={saveAssistantCredentials}
         onClearAssistantCreds={clearAssistantCredentials}
+        calendarStatus={calendarStatus}
+        onConnectCalendar={handleConnectCalendar}
+        onDisconnectCalendar={handleDisconnectCalendar}
         showGenericConfirm={showGenericConfirm}
         showToast={showToast}
         i18n={i18n}

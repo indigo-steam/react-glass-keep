@@ -29,6 +29,33 @@ git clone https://github.com/indigo-steam/react-glass-keep.git indigo-notes
 cd indigo-notes
 ```
 
+## Google Calendar (opcional)
+
+Si querés que el asistente registre jornadas y eventos en Google Calendar:
+
+1. Andá a [Google Cloud Console](https://console.cloud.google.com).
+2. Creá un proyecto o usá uno existente.
+3. Habilitá la **Google Calendar API**.
+4. Configurá la **Pantalla de consentimiento OAuth**:
+   - User Type: External (o Internal si tenés Workspace).
+   - Agregá el scope `https://www.googleapis.com/auth/calendar.events`.
+   - Agregá tu email como usuario de prueba si es External.
+5. En **Credentials → Create credentials → OAuth client ID → Web application**:
+   - Authorized redirect URIs: `https://notas.tu-dominio.com/api/calendar/callback`
+   - Para desarrollo local: `http://localhost:8080/api/calendar/callback`
+6. Copiá el Client ID y Client Secret al env-file `~/.glass-keep/indigo-notes.env`:
+
+```env
+GOOGLE_CLIENT_ID=tu-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=tu-client-secret
+GOOGLE_REDIRECT_URI=https://notas.tu-dominio.com/api/calendar/callback
+```
+
+> **Importante:** el valor de `GOOGLE_REDIRECT_URI` debe coincidir exactamente con la URI registrada en Google Cloud (incluyendo protocolo, dominio y path).
+
+7. Reiniciá el contenedor de la app para cargar las nuevas variables.
+8. Cada usuario conecta su cuenta desde **Configuración → Google Calendar**.
+
 ## Parte 1 — La app (2 minutos)
 
 1. Generá los secretos (no los commitees nunca):

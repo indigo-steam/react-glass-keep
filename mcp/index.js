@@ -389,6 +389,128 @@ server.registerTool(
   }
 );
 
+function getBogotaOffset(date) {
+  // America/Bogota is UTC-5 all year (no DST)
+  return "-05:00";
+}
+
+server.registerTool(
+  "get_current_time",
+  {
+    title: "Obtener hora actual",
+    description: "Devuelve la hora actual en la zona horaria del usuario (por defecto America/Bogota).",
+    inputSchema: {
+      timezone: z.string().optional().describe("Zona horaria IANA, por ejemplo America/Bogota"),
+    },
+  },
+  async ({ timezone }) => {
+    try {
+      const tz = timezone || "America/Bogota";
+      const now = new Date();
+      const iso = now.toLocaleString("sv-SE", { timeZone: tz }).replace(" ", "T") + getBogotaOffset(now);
+      return textResult({ timezone: tz, now: iso });
+    } catch (err) {
+      return errorResult(`Error obteniendo la hora: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "list_calendar_events",
+  {
+    title: "Listar eventos del calendario",
+    description: "Lista eventos de Google Calendar del usuario en un rango de fechas.",
+    inputSchema: {
+      start: z.string().optional().describe("Inicio del rango en ISO 8601 (default hoy 00:00)"),
+      end: z.string().optional().describe("Fin del rango en ISO 8601 (default hoy 23:59)"),
+      max_results: z.number().int().min(1).max(250).optional().describe("Máximo de resultados (default 50)"),
+    },
+  },
+  async ({ start, end, max_results }) => {
+    try {
+      const events = await client.listCalendarEvents({ start, end, max_results });
+      return textResult(events);
+    } catch (err) {
+      return errorResult(`Error listando eventos: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "create_calendar_event",
+  {
+    title: "Crear evento en el calendario",
+    description: "Crea un evento en Google Calendar. Siempre confirmá con el usuario antes de usar esta herramienta, excepto para inicio/fin de jornada.",
+    inputSchema: {
+      summary: z.string().min(1).describe("Título del evento"),
+      start: z.string().describe("Fecha/hora de inicio en ISO 8601"),
+      end: z.string().optional().describe("Fecha/hora de fin en ISO 8601 (default +1 hora)"),
+      description: z.string().optional().describe("Descripción opcional"),
+    },
+  },
+  async ({ summary, start, end, description }) => {
+    try {
+      const created = await client.createCalendarEvent({ summary, start, end, description });
+      return textResult(created);
+    } catch (err) {
+      return errorResult(`Error creando evento: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "start_workday",
+  {
+    title: "Iniciar jornada laboral",
+    description: "Registra el inicio de la jornada laboral en Google Calendar creando un evento 'Jornada laboral'.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const result = await client.startWorkday();
+      return textResult(result);
+    } catch (err) {
+      return errorResult(`Error iniciando jornada: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "get_workday_status",
+  {
+    title: "Estado de jornada laboral",
+    description: "Devuelve si hay una jornada laboral abierta para hoy.",
+    inputSchema: {},
+  },
+  async () => {
+    try {
+      const status = await client.getWorkdayStatus();
+      return textResult(status);
+    } catch (err) {
+      return errorResult(`Error consultando jornada: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "end_workday",
+  {
+    title: "Finalizar jornada laboral",
+    description: "Cierra la jornada laboral abierta de hoy con la hora actual o una hora dada.",
+    inputSchema: {
+      end_time: z.string().optional().describe("Hora de finalización en ISO 8601 (default ahora)"),
+    },
+  },
+  async ({ end_time }) => {
+    try {
+      const result = await client.endWorkday({ end_time });
+      return textResult(result);
+    } catch (err) {
+      return errorResult(`Error cerrando jornada: ${err.message}`);
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error(`[indigo-notes-mcp] conectado a ${client.baseUrl} (stdio)`);

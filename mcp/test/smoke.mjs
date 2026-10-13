@@ -115,16 +115,22 @@ async function main() {
   const tools = (await mcpA.listTools()).tools.map((t) => t.name).sort();
   const expectedTools = [
     "archive_note",
+    "create_calendar_event",
     "create_note",
     "delete_note",
+    "end_workday",
     "get_context",
+    "get_current_time",
     "get_note",
+    "get_workday_status",
+    "list_calendar_events",
     "list_tags",
     "restore_note",
     "search_notes",
+    "start_workday",
     "update_note",
   ];
-  check("expone las 9 herramientas", JSON.stringify(tools) === JSON.stringify(expectedTools), tools.join(","));
+  check("expone las 15 herramientas", JSON.stringify(tools) === JSON.stringify(expectedTools), tools.join(","));
 
   const search = toolJson(await call(mcpA, "search_notes", { query: runId }));
   check("search_notes encuentra la nota de alice", search.notes?.some((n) => n.id === aliceNoteId), JSON.stringify(search).slice(0, 200));
@@ -191,6 +197,27 @@ async function main() {
 
   const deleted = toolJson(await call(mcpA, "delete_note", { id: createdNote.id, confirm: true }));
   check("delete_note mueve a la papelera", deleted.ok === true);
+
+  // ---- Calendar tools ----
+  const timeRes = toolJson(await call(mcpA, "get_current_time", { timezone: "America/Bogota" }));
+  check("get_current_time devuelve la zona horaria", timeRes.timezone === "America/Bogota" && typeof timeRes.now === "string", JSON.stringify(timeRes).slice(0, 200));
+
+  // Without a connected Google Calendar these tools return structured errors.
+  const calendarErrorCases = [
+    ["list_calendar_events", {}],
+    ["get_workday_status", {}],
+    ["start_workday", {}],
+    ["end_workday", {}],
+    ["create_calendar_event", { summary: "Test", start: new Date().toISOString() }],
+  ];
+  for (const [toolName, args] of calendarErrorCases) {
+    const res = await call(mcpA, toolName, args);
+    check(
+      `${toolName} devuelve error controlado sin Google Calendar conectado`,
+      res.isError === true && res.content?.[0]?.text?.includes("Google Calendar not connected"),
+      JSON.stringify(res.content).slice(0, 200)
+    );
+  }
 
   // Isolation: bob's MCP must not see or modify alice's notes.
   const mcpB = await connectMcp(bob.secretKey);

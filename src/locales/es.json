@@ -74,7 +74,14 @@
     "spanish": "Español",
     "languageModalTitle": "Elegir idioma",
     "languageModalDesc": "Selecciona el idioma de la app. Los cambios se aplican al instante.",
-    "languageChanged": "Idioma cambiado a {{language}}"
+    "languageChanged": "Idioma cambiado a {{language}}",
+    "googleCalendar": "Google Calendar",
+    "googleCalendarDesc": "Conectá tu calendario para que el asistente registre jornadas y eventos.",
+    "googleCalendarConnected": "Conectado como {{email}}",
+    "googleCalendarNotConnected": "No conectado",
+    "googleCalendarConnect": "Conectar Google Calendar",
+    "googleCalendarDisconnect": "Desconectar",
+    "googleCalendarConnecting": "Conectando..."
   },
   "admin": {
     "title": "Panel de Administración",
@@ -149,6 +156,8 @@
     "notesDeleted": "{{count}} notas eliminadas",
     "noteArchived": "Nota archivada",
     "noteUnarchived": "Nota desarchivada",
+    "calendarConnected": "Google Calendar conectado",
+    "calendarDisconnected": "Google Calendar desconectado",
     "error": "Ocurrió un error"
   },
   "confirm": {
@@ -158,6 +167,8 @@
     "enableAiMessage": "El asistente usa tu propia API key (BYOK) y tu agente personal. Tus notas se consultan solo con tu credencial. ¿Activar la búsqueda con IA?",
     "removeAssistantTitle": "¿Quitar la API key del asistente?",
     "removeAssistantMessage": "El asistente quedará desactivado hasta que cargues otra key. Tus notas no se tocan.",
+    "disconnectCalendarTitle": "¿Desconectar Google Calendar?",
+    "disconnectCalendarMessage": "El asistente ya no podrá crear ni consultar eventos.",
     "confirmAction": "Confirmar acción"
   },
   "theme": {
