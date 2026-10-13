@@ -2043,7 +2043,9 @@ app.get("/api/calendar/status", auth, (req, res) => {
 });
 
 app.get("/api/calendar/auth-url", auth, (req, res) => {
+  console.log(`[calendar auth-url] requested by user=${req.user.id}`);
   if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
+    console.error("[calendar auth-url] missing env vars");
     return res.status(503).json({ error: "Google OAuth not configured on server." });
   }
   const state = generateOAuthState(req.user.id);
@@ -2062,12 +2064,15 @@ app.get("/api/calendar/auth-url", auth, (req, res) => {
 });
 
 app.get("/api/calendar/callback", async (req, res) => {
+  console.log("[calendar callback] hit:", req.url);
   const { code, state } = req.query;
   if (!code || !state) {
+    console.error("[calendar callback] missing code or state");
     return res.status(400).send("Missing code or state.");
   }
   const payload = verifyOAuthState(state);
   if (!payload || !payload.uid) {
+    console.error("[calendar callback] invalid state");
     return res.status(400).send("Invalid or expired state.");
   }
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
