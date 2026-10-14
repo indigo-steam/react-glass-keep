@@ -17,3 +17,16 @@ export const Sparkles = () => (
     <path d="M17 19h4" />
   </svg>
 );
+
+export const SendIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m22 2-7 20-4-9-9-4Z" />
+    <path d="M22 2 11 13" />
+  </svg>
+);
+
+export const StopIcon = () => (
+  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x="7" y="7" width="10" height="10" rx="1.5" />
+  </svg>
+);

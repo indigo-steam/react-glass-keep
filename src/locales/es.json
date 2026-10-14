@@ -233,6 +233,7 @@
   },
   "menu": {
     "open": "Menú",
+    "assistant": "Asistente",
     "signOut": "Cerrar sesión"
   },
   "search": {
@@ -246,6 +247,23 @@
     "errorResponse": "Lo siento, encontré un error al procesar tu solicitud.",
     "enableMode": "Activar modo IA",
     "disableMode": "Desactivar modo IA"
+  },
+  "assistant": {
+    "title": "Asistente",
+    "placeholder": "Escribe un mensaje…",
+    "send": "Enviar",
+    "stop": "Detener",
+    "clear": "Limpiar conversación",
+    "reasoning": "Razonamiento",
+    "emptyTitle": "¿En qué te ayudo?",
+    "emptyHint": "Pregúntame sobre tus notas, tu calendario o pídeme que organice algo.",
+    "notConfigured": "El asistente no está configurado. Agrega tu clave de API en Ajustes.",
+    "suggestions": {
+      "notes": "Resume mis notas de esta semana",
+      "calendar": "¿Qué tengo en el calendario mañana?",
+      "summary": "¿Qué notas tengo pendientes?",
+      "organize": "Ayúdame a organizar mis tags"
+    }
   },
   "composer": {
     "addItem": "Agregar",

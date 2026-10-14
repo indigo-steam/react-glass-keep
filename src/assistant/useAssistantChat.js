@@ -19,16 +19,31 @@ import {
   appendReasoning,
   createAssistantMessage,
   createUserMessage,
+  historyToMessages,
   normalizeTool,
   upsertTool,
 } from "./messages";
 
 const HISTORY_LIMIT = 20;
 
-export function useAssistantChat({ userId, onError } = {}) {
+// Read the persisted text-only history (null-safe, never throws).
+function loadStoredHistory(storageKey) {
+  if (!storageKey) return [];
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function useAssistantChat({ userId, onError, hydrate = true } = {}) {
   const storageKey = userId ? `assistantHistory-${userId}` : null;
 
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() =>
+    hydrate ? historyToMessages(loadStoredHistory(storageKey)) : []
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [progress, setProgress] = useState(null);
 
@@ -36,19 +51,16 @@ export function useAssistantChat({ userId, onError } = {}) {
   // never reads a stale closure.
   const historyRef = useRef([]);
   const abortRef = useRef(null);
+  const seededKeyRef = useRef(storageKey);
 
   useEffect(() => {
-    if (!storageKey) {
-      historyRef.current = [];
-      return;
+    const stored = loadStoredHistory(storageKey);
+    historyRef.current = stored;
+    if (storageKey !== seededKeyRef.current) {
+      seededKeyRef.current = storageKey;
+      if (hydrate) setMessages(historyToMessages(stored));
     }
-    try {
-      const raw = localStorage.getItem(storageKey);
-      historyRef.current = raw ? JSON.parse(raw) : [];
-    } catch {
-      historyRef.current = [];
-    }
-  }, [storageKey]);
+  }, [storageKey, hydrate]);
 
   const persistHistory = useCallback(
     (history) => {

@@ -141,3 +141,12 @@ registro → modo IA activo → envío → stream SSE con `hermes.tool.progress`
 2. **Test MCP desactualizado**: `mcp/test/smoke.mjs` espera 15 tools y hay 18. Corregirlo requiere tocar MCP (prohibido en Fase 0). Queda pendiente.
 3. **ESLint preexistente**: 150 errores. No se abordan en estas fases para no mezclar refactor con limpieza.
 4. **`askAI`/`initAI`**: se conservan como compatibilidad aunque hoy nadie los importe; pueden retirarse cuando se confirme que no hay consumidores externos.
+
+---
+
+## 6. Fase 2 implementada (vista de chat `#/assistant`)
+
+- Spec: `docs/superpowers/specs/2026-10-13-assistant-chat-view-design.md`.
+- Plan: `docs/superpowers/plans/2026-10-13-assistant-chat-view.md`.
+- Rama: `feat/chat-ui`.
+- Resumen: la conversación pasa a una vista dedicada (`AssistantView` + `MessageBubble` + `Composer`); se retira el modo IA de la búsqueda de notas (toggle ✨, tarjeta inline) y el toggle "IA local" de Ajustes. Se hidrata el historial desde `assistantHistory-<userId>` y se añaden `assistant.*` en i18n. Backend/MCP/contrato del stream sin cambios.

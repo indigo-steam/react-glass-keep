@@ -14,6 +14,7 @@ import {
   appendReasoning,
   createAssistantMessage,
   createUserMessage,
+  historyToMessages,
   lastAssistantMessage,
   normalizeTool,
   upsertTool,
@@ -121,6 +122,31 @@ console.log("Message model");
   const last = lastAssistantMessage(msgs);
   check("lastAssistantMessage finds the last assistant", last?.role === "assistant" && last === msgs[1]);
   check("lastAssistantMessage on empty -> null", lastAssistantMessage([]) === null);
+}
+
+{
+  const empty = historyToMessages([]);
+  check("historyToMessages vacío -> []", Array.isArray(empty) && empty.length === 0);
+
+  const parsed = historyToMessages([
+    { role: "user", content: "hola" },
+    { role: "assistant", content: "¿en qué te ayudo?" },
+  ]);
+  check(
+    "historyToMessages mapea roles",
+    parsed.length === 2 && parsed[0].role === "user" && parsed[1].role === "assistant"
+  );
+  check(
+    "historyToMessages assistant queda done con contenido",
+    parsed[1].status === MessageStatus.DONE && parsed[1].content === "¿en qué te ayudo?"
+  );
+
+  const filtered = historyToMessages([
+    { role: "system", content: "x" },
+    { role: "user" },
+    null,
+  ]);
+  check("historyToMessages ignora entradas inválidas", filtered.length === 0);
 }
 
 if (failures === 0) {
