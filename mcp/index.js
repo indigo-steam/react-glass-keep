@@ -440,20 +440,54 @@ server.registerTool(
   "create_calendar_event",
   {
     title: "Crear evento en el calendario",
-    description: "Crea un evento en Google Calendar. Siempre confirmá con el usuario antes de usar esta herramienta, excepto para inicio/fin de jornada. Para eventos de todo el día, usá solo la fecha (YYYY-MM-DD).",
+    description: "Crea un evento en Google Calendar. Siempre confirmá con el usuario antes de usar esta herramienta, excepto para inicio/fin de jornada. Para eventos de todo el día, usá solo la fecha (YYYY-MM-DD). Para cumpleaños y aniversarios usá create_birthday_event.",
     inputSchema: {
       summary: z.string().min(1).describe("Título del evento"),
-      start: z.string().describe("Fecha/hora de inicio en ISO 8601 o solo fecha YYYY-MM-DD para todo el día"),
+      start: z.string().describe("Fecha/hora de inicio en ISO 8601 (ej: 2026-11-08T09:00:00-05:00) o solo fecha YYYY-MM-DD para todo el día"),
       end: z.string().optional().describe("Fecha/hora de fin en ISO 8601 o solo fecha YYYY-MM-DD (default +1 hora o +1 día)"),
       description: z.string().optional().describe("Descripción opcional"),
+      reminders: z.array(z.object({
+        method: z.enum(["popup", "email"]).optional().describe("Método del recordatorio (por defecto popup)"),
+        minutes: z.number().int().min(0).max(40320).describe("Minutos antes del inicio del evento"),
+      })).max(5).optional().describe("Recordatorios personalizados. Si se omite, se usa el default (9am del día anterior para todo el día; 1 hora antes para eventos con hora)."),
     },
   },
-  async ({ summary, start, end, description }) => {
+  async ({ summary, start, end, description, reminders }) => {
     try {
-      const created = await client.createCalendarEvent({ summary, start, end, description });
+      const created = await client.createCalendarEvent({ summary, start, end, description, reminders });
       return textResult(created);
     } catch (err) {
       return errorResult(`Error creando evento: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "create_birthday_event",
+  {
+    title: "Crear cumpleaños o aniversario",
+    description: "Crea un cumpleaños, aniversario o fecha especial que se repite cada año. Genera un evento a las 09:00 (hora Bogotá) con DOS recordatorios: 09:00 del día anterior y 09:00 del día del evento. Siempre confirmá con el usuario antes de crear.",
+    inputSchema: {
+      title: z.string().min(1).describe("Título del evento, ej: 'Cumpleaños de Tía Esther'"),
+      date: z.string().describe("Fecha del evento en formato YYYY-MM-DD (con año)"),
+      description: z.string().optional().describe("Descripción opcional"),
+    },
+  },
+  async ({ title, date, description }) => {
+    try {
+      const created = await client.createCalendarEvent({
+        summary: title,
+        start: `${date}T09:00:00-05:00`,
+        end: `${date}T09:30:00-05:00`,
+        description,
+        reminders: [
+          { method: "popup", minutes: 1440 },
+          { method: "popup", minutes: 0 },
+        ],
+      });
+      return textResult(created);
+    } catch (err) {
+      return errorResult(`Error creando cumpleaños: ${err.message}`);
     }
   }
 );
@@ -469,11 +503,15 @@ server.registerTool(
       start: z.string().optional().describe("Nueva fecha/hora de inicio (ISO 8601 o YYYY-MM-DD)"),
       end: z.string().optional().describe("Nueva fecha/hora de fin (ISO 8601 o YYYY-MM-DD)"),
       description: z.string().optional().describe("Nueva descripción"),
+      reminders: z.array(z.object({
+        method: z.enum(["popup", "email"]).optional().describe("Método del recordatorio (por defecto popup)"),
+        minutes: z.number().int().min(0).max(40320).describe("Minutos antes del inicio del evento"),
+      })).max(5).optional().describe("Recordatorios personalizados."),
     },
   },
-  async ({ id, summary, start, end, description }) => {
+  async ({ id, summary, start, end, description, reminders }) => {
     try {
-      const updated = await client.updateCalendarEvent({ id, summary, start, end, description });
+      const updated = await client.updateCalendarEvent({ id, summary, start, end, description, reminders });
       return textResult(updated);
     } catch (err) {
       return errorResult(`Error actualizando evento: ${err.message}`);

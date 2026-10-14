@@ -166,17 +166,17 @@ export class GlassKeepClient {
     return this.#request(`/api/calendar/events?${params.toString()}`);
   }
 
-  async createCalendarEvent({ summary, start, end, description }) {
+  async createCalendarEvent({ summary, start, end, description, reminders }) {
     return this.#request("/api/calendar/events", {
       method: "POST",
-      body: { summary, start, end, description },
+      body: { summary, start, end, description, reminders },
     });
   }
 
-  async updateCalendarEvent({ id, summary, start, end, description }) {
+  async updateCalendarEvent({ id, summary, start, end, description, reminders }) {
     return this.#request(`/api/calendar/events/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      body: { summary, start, end, description },
+      body: { summary, start, end, description, reminders },
     });
   }
 

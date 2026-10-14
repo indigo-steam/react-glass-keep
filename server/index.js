@@ -1961,6 +1961,7 @@ app.post("/api/assistant/chat", auth, assistantChatLimiter, async (req, res) => 
       `- Cuando el usuario diga "inicio jornada laboral", usá la herramienta \`start_workday\` para registrar el inicio.\n` +
       `- Cuando diga "fin jornada laboral", usá la herramienta \`end_workday\` para cerrar la jornada abierta de hoy.\n` +
       `- Siempre confirmá los detalles (título, hora, descripción) antes de crear un evento que no sea de jornada.\n` +
+      `- Para cumpleaños, aniversarios y fechas especiales que se repiten cada año, usá la herramienta \`create_birthday_event\` (crea el evento a las 09:00 con avisos el día anterior y el día del evento).\n` +
       `- Si el usuario no tiene Google Calendar conectado, explicale cómo hacerlo desde Configuración.`,
   };
   const cleanWithSystem = [systemMessage, ...clean];
@@ -2180,20 +2181,31 @@ function buildCalendarEnd(startParsed, end) {
   return { type: "dateTime", value: toBogotaISO(d) };
 }
 
-function buildCalendarEvent(summary, start, end, description) {
+function sanitizeReminders(reminders) {
+  if (!Array.isArray(reminders) || reminders.length === 0) return null;
+  const valid = reminders
+    .filter((r) => r && typeof r.minutes === "number" && r.minutes >= 0 && r.minutes <= 40320)
+    .map((r) => ({
+      method: r.method === "email" ? "email" : "popup",
+      minutes: Math.floor(r.minutes),
+    }))
+    .slice(0, 5);
+  return valid.length ? valid : null;
+}
+
+function buildCalendarEvent(summary, start, end, description, reminders) {
   const startParsed = parseCalendarStart(start);
   if (!startParsed) throw new Error("Invalid start date");
   const endParsed = buildCalendarEnd(startParsed, end);
   if (!endParsed) throw new Error("Invalid end date");
   const isAllDay = startParsed.type === "date";
+  const custom = sanitizeReminders(reminders);
   const event = {
     summary,
     description: description || "",
     reminders: {
       useDefault: false,
-      overrides: [
-        { method: "popup", minutes: isAllDay ? 900 : 60 },
-      ],
+      overrides: custom || [{ method: "popup", minutes: isAllDay ? 900 : 60 }],
     },
   };
   if (isAllDay) {
@@ -2208,11 +2220,11 @@ function buildCalendarEvent(summary, start, end, description) {
 
 app.post("/api/calendar/events", auth, async (req, res) => {
   try {
-    const { summary, start, end, description } = req.body || {};
+    const { summary, start, end, description, reminders } = req.body || {};
     if (!summary || !start) {
       return res.status(400).json({ error: "summary and start are required" });
     }
-    const event = buildCalendarEvent(summary, start, end, description);
+    const event = buildCalendarEvent(summary, start, end, description, reminders);
     const data = await googleCalendarFetch(req.user.id, "/calendars/primary/events", {
       method: "POST",
       body: JSON.stringify(event),
@@ -2223,6 +2235,7 @@ app.post("/api/calendar/events", auth, async (req, res) => {
       start: data.start,
       end: data.end,
       status: data.status,
+      reminders: data.reminders,
     });
   } catch (err) {
     console.error("create event error:", err.message);
@@ -2356,7 +2369,7 @@ app.post("/api/calendar/workday/end", auth, async (req, res) => {
 app.patch("/api/calendar/events/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { summary, start, end, description } = req.body || {};
+    const { summary, start, end, description, reminders } = req.body || {};
     const payload = {};
     if (summary !== undefined) payload.summary = summary;
     if (description !== undefined) payload.description = description;
@@ -2365,13 +2378,20 @@ app.patch("/api/calendar/events/:id", auth, async (req, res) => {
         summary || "(sin título)",
         start || new Date().toISOString(),
         end,
-        description || ""
+        description || "",
+        reminders
       );
       payload.start = event.start;
       payload.end = event.end;
       payload.reminders = event.reminders;
       if (summary === undefined) delete payload.summary;
       if (description === undefined) delete payload.description;
+    } else if (reminders !== undefined) {
+      const custom = sanitizeReminders(reminders);
+      if (!custom) {
+        return res.status(400).json({ error: "Invalid reminders" });
+      }
+      payload.reminders = { useDefault: false, overrides: custom };
     }
     if (Object.keys(payload).length === 0) {
       return res.status(400).json({ error: "No fields to update" });
