@@ -233,6 +233,7 @@
   },
   "menu": {
     "open": "Menu",
+    "assistant": "Assistant",
     "signOut": "Sign out"
   },
   "search": {
@@ -246,6 +247,23 @@
     "errorResponse": "Sorry, I encountered an error while processing your request.",
     "enableMode": "Enable AI mode",
     "disableMode": "Disable AI mode"
+  },
+  "assistant": {
+    "title": "Assistant",
+    "placeholder": "Type a message…",
+    "send": "Send",
+    "stop": "Stop",
+    "clear": "Clear conversation",
+    "reasoning": "Reasoning",
+    "emptyTitle": "How can I help?",
+    "emptyHint": "Ask me about your notes, your calendar, or ask me to organize something.",
+    "notConfigured": "The assistant is not configured. Add your API key in Settings.",
+    "suggestions": {
+      "notes": "Summarize my notes from this week",
+      "calendar": "What's on my calendar tomorrow?",
+      "summary": "Which notes are pending?",
+      "organize": "Help me organize my tags"
+    }
   },
   "composer": {
     "addItem": "Add",
