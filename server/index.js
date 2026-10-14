@@ -2146,6 +2146,7 @@ app.get("/api/calendar/events", auth, async (req, res) => {
         start: ev.start,
         end: ev.end,
         status: ev.status,
+        reminders: ev.reminders,
         extendedProperties: ev.extendedProperties,
       })),
     });
