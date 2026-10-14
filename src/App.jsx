@@ -4,9 +4,6 @@ import { useTranslation } from "react-i18next";
 import i18nCore from "./i18n";
 import { renderMarkdown } from "./markdown";
 import AssistantView from "./assistant/AssistantView";
-import { useAssistantChat } from "./assistant/useAssistantChat";
-import { lastAssistantMessage, MessageStatus } from "./assistant/messages";
-import AssistantResponseCard from "./assistant/AssistantResponseCard";
 import { CloseIcon, Sparkles } from "./assistant/icons";
 import DrawingCanvas from "./DrawingCanvas";
 
@@ -246,11 +243,6 @@ const ArrowLeft = () => (
 const ArrowRight = () => (
   <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-  </svg>
-);
-const SendIcon = () => (
-  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-6 6m6-6l6 6" />
   </svg>
 );
 const Kebab = () => (
@@ -1775,7 +1767,7 @@ function TagSidebar({ open, onClose, tagsWithCounts, activeTag, onSelect, dark, 
 }
 
 /** ---------- Settings Panel ---------- */
-function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, localAiEnabled, setLocalAiEnabled, assistantCreds, savingAssistant, onSaveAssistantCreds, onClearAssistantCreds, calendarStatus, onConnectCalendar, onDisconnectCalendar, showGenericConfirm, showToast, i18n, t }) {
+function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImportGKeep, onImportMd, onDownloadSecretKey, alwaysShowSidebarOnWide, setAlwaysShowSidebarOnWide, assistantCreds, savingAssistant, onSaveAssistantCreds, onClearAssistantCreds, calendarStatus, onConnectCalendar, onDisconnectCalendar, showGenericConfirm, showToast, i18n, t }) {
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [assistantFormOpen, setAssistantFormOpen] = useState(false);
   const [assistantProvider, setAssistantProvider] = useState('openrouter');
@@ -1893,43 +1885,6 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
           <div className="mb-8">
             <h4 className="text-md font-semibold mb-4">{t('settings.uiPreferences')}</h4>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">{t('settings.localAi')}</div>
-                  <div className="text-sm text-gray-500">{t('settings.localAiDesc')}</div>
-                </div>
-                <button
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localAiEnabled
-                    ? 'bg-indigo-600'
-                    : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  onClick={() => {
-                    if (!localAiEnabled) {
-                      showGenericConfirm({
-                        title: t('confirm.enableAi'),
-                        message: t('confirm.enableAiMessage'),
-                        confirmText: t('common.confirm'),
-                        cancelText: t('common.cancel'),
-                        danger: false,
-                        onConfirm: async () => {
-                          try { localStorage.removeItem("localAiHidden"); } catch (e) { /* ignore */ }
-                          setLocalAiEnabled(true);
-                          showToast(t('toast.aiEnabled'), "success");
-                        }
-                      });
-                    } else {
-                      try { localStorage.setItem("localAiHidden", "true"); } catch (e) { /* ignore */ }
-                      setLocalAiEnabled(false);
-                      showToast(t('toast.aiDisabled'), "info");
-                    }
-                  }}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${localAiEnabled ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                  />
-                </button>
-              </div>
 
               {/* Assistant BYOK: provider + API key */}
               <div className="rounded-xl border border-[var(--border-light)] p-4">
@@ -2555,7 +2510,7 @@ function NotesUI({
   // Settings panel
   openSettingsPanel,
   // AI props
-  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, onClearAiHistory, assistantAvailable, onOpenAssistant, onToggleAiMode, t
+  assistantAvailable, onOpenAssistant, t
 }) {
   // Multi-select color popover (local UI state)
   const multiColorBtnRef = useRef(null);
@@ -2695,47 +2650,16 @@ function NotesUI({
 
         <div className="flex-grow flex justify-center px-4 sm:px-8">
           <div className="relative w-full max-w-lg">
-            {/* AI mode toggle (always visible when the assistant is available) */}
-            {assistantAvailable && (
-              <button
-                type="button"
-                title={localAiEnabled ? t('ai.disableMode') : t('ai.enableMode')}
-                aria-label={localAiEnabled ? t('ai.disableMode') : t('ai.enableMode')}
-                aria-pressed={localAiEnabled}
-                onClick={() => onToggleAiMode?.()}
-                className={`absolute left-1.5 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full flex items-center justify-center transition-colors ${localAiEnabled
-                  ? 'text-indigo-600 bg-indigo-600/10'
-                  : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-600/10'}`}
-              >
-                <Sparkles />
-              </button>
-            )}
             <input
               type="text"
               name="notes-search"
               enterKeyHint="search"
-              placeholder={localAiEnabled ? t('notes.searchAiPlaceholder') : t('notes.searchPlaceholder')}
-              className={`w-full bg-transparent border border-[var(--border-light)] rounded-lg ${assistantAvailable ? 'pl-11' : 'pl-4'} ${localAiEnabled ? 'pr-16' : 'pr-10'} py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400`}
+              placeholder={t('notes.searchPlaceholder')}
+              className="w-full bg-transparent border border-[var(--border-light)] rounded-lg pl-4 pr-10 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && localAiEnabled && search.trim().length > 0) {
-                  onAiSearch?.(search);
-                }
-              }}
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {localAiEnabled && search.trim().length > 0 && (
-                <button
-                  type="button"
-                  title={t('ai.ask')}
-                  aria-label={t('ai.ask')}
-                  className="h-9 w-9 rounded-full flex items-center justify-center text-indigo-600 hover:bg-indigo-600/10 transition-colors"
-                  onClick={() => onAiSearch?.(search)}
-                >
-                  <SendIcon />
-                </button>
-              )}
               {search && (
                 <button
                   type="button"
@@ -2913,20 +2837,6 @@ function NotesUI({
           />
         </div>
       </header>
-
-      {/* AI Response Box */}
-      <AssistantResponseCard
-        visible={localAiEnabled && (aiResponse || isAiLoading)}
-        text={aiResponse}
-        isLoading={isAiLoading}
-        progress={aiLoadingProgress}
-        onClear={() => {
-          setAiResponse(null);
-          setSearch('');
-          onClearAiHistory?.();
-        }}
-        t={t}
-      />
 
       {/* Composer */}
       <div className="px-4 sm:px-6 md:px-8 lg:px-12">
@@ -3517,38 +3427,6 @@ export default function App() {
     try { return parseInt(localStorage.getItem("sidebarWidth")) || 288; } catch (e) { return 288; }
   });
 
-  // Local AI
-  const [localAiEnabled, setLocalAiEnabled] = useState(() => {
-    try {
-      const stored = localStorage.getItem("localAiEnabled");
-      return stored === null ? false : stored === "true";
-    } catch (e) { return false; }
-  });
-  // Assistant conversation: typed message model + streaming transport.
-  // The hook keeps the session messages (user/assistant, tool calls, reasoning,
-  // errors) and persists the text-only context under the same key as before.
-  const logAssistantError = useCallback((err) => console.error("AI Error:", err), []);
-  const assistant = useAssistantChat({
-    userId: currentUser?.id,
-    onError: logAssistantError,
-  });
-  const lastAssistant = lastAssistantMessage(assistant.messages);
-  // Derive the values the current response card expects, preserving the prior
-  // behaviour: while streaming the card shows "thinking"; on error it shows the
-  // generic message; otherwise it shows the accumulated answer.
-  const aiResponse = lastAssistant
-    ? lastAssistant.status === MessageStatus.ERROR
-      ? t("ai.errorResponse")
-      : lastAssistant.content || null
-    : null;
-  const isAiLoading = assistant.isStreaming;
-  const aiLoadingProgress = assistant.progress;
-  // Alias kept so the existing card/props keep working; clears the visible
-  // response without touching the persisted context.
-  const setAiResponse = assistant.clearResponse;
-  const assistantSend = assistant.send;
-  const assistantClearAll = assistant.clearAll;
-
   // Assistant BYOK credentials (masked, server-side vault)
   const [assistantCreds, setAssistantCreds] = useState(null);
   const [savingAssistant, setSavingAssistant] = useState(false);
@@ -3572,36 +3450,16 @@ export default function App() {
         if (creds) setAssistantCreds(creds);
         const available = !!(data?.enabled && data?.configured);
         setAssistantAvailable(available);
-        if (available) {
-          let hidden = false;
-          try { hidden = localStorage.getItem("localAiHidden") === "true"; } catch (e) { /* ignore */ }
-          if (!hidden) setLocalAiEnabled(true);
-        } else {
-          setLocalAiEnabled(false);
-        }
       } catch (e) { /* keep current default */ }
     })();
     return () => { cancelled = true; };
   }, [token]);
-
-  const toggleAiMode = () => {
-    if (localAiEnabled) {
-      try { localStorage.setItem("localAiHidden", "true"); } catch (e) { /* ignore */ }
-      setLocalAiEnabled(false);
-      setAiResponse(null);
-    } else {
-      try { localStorage.removeItem("localAiHidden"); } catch (e) { /* ignore */ }
-      setLocalAiEnabled(true);
-    }
-  };
 
   const saveAssistantCredentials = async (form) => {
     setSavingAssistant(true);
     try {
       const data = await api("/assistant/credentials", { method: "PUT", token, body: form });
       setAssistantCreds(data);
-      try { localStorage.removeItem("localAiHidden"); } catch (e) { /* ignore */ }
-      setLocalAiEnabled(true);
       showToast(
         data?.applied ? t('toast.assistantSaved') : t('toast.assistantSavedPending'),
         data?.applied ? "success" : "info"
@@ -3619,7 +3477,6 @@ export default function App() {
     try {
       const data = await api("/assistant/credentials", { method: "DELETE", token });
       setAssistantCreds(data);
-      setLocalAiEnabled(false);
       showToast(t('toast.assistantRemoved'), "info");
     } catch (err) {
       showToast(err?.message || t('toast.error'), "error");
@@ -3693,8 +3550,9 @@ export default function App() {
     });
   };
 
-  // Conversation history now lives in `useAssistantChat` (see above), which
-  // persists the same text-only context under `assistantHistory-<userId>`.
+  // Conversation history lives in `AssistantView` (#/assistant), which owns
+  // `useAssistantChat` and persists the same text-only context under
+  // `assistantHistory-<userId>`.
 
   // Composer
   const [composerType, setComposerType] = useState("text");
@@ -3884,11 +3742,6 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("sidebarWidth", String(sidebarWidth)); } catch (e) { }
   }, [sidebarWidth]);
-
-  useEffect(() => {
-    try { localStorage.setItem("localAiEnabled", String(localAiEnabled)); } catch (e) { }
-    if (!localAiEnabled) setAiResponse(null);
-  }, [localAiEnabled, setAiResponse]);
 
   // Window resize listener for responsive sidebar behavior
   useEffect(() => {
@@ -4256,10 +4109,6 @@ export default function App() {
 
 
   // Load notes
-
-  // NOTE: the assistant request handler (`handleAiSearch`) was replaced by
-  // `assistant.send` from `useAssistantChat`; streaming, history persistence and
-  // error handling now live in that hook.
 
   const loadNotes = async () => {
     if (!token) return;
@@ -7175,8 +7024,6 @@ export default function App() {
         onDownloadSecretKey={downloadSecretKey}
         alwaysShowSidebarOnWide={alwaysShowSidebarOnWide}
         setAlwaysShowSidebarOnWide={setAlwaysShowSidebarOnWide}
-        localAiEnabled={localAiEnabled}
-        setLocalAiEnabled={setLocalAiEnabled}
         assistantCreds={assistantCreds}
         savingAssistant={savingAssistant}
         onSaveAssistantCreds={saveAssistantCredentials}
@@ -7268,16 +7115,8 @@ export default function App() {
         sidebarPermanent={alwaysShowSidebarOnWide && windowWidth >= 700}
         sidebarWidth={sidebarWidth}
         // AI props
-        localAiEnabled={localAiEnabled}
-        aiResponse={aiResponse}
-        setAiResponse={setAiResponse}
-        isAiLoading={isAiLoading}
-        aiLoadingProgress={aiLoadingProgress}
-        onAiSearch={assistantSend}
-        onClearAiHistory={assistantClearAll}
         assistantAvailable={assistantAvailable}
         onOpenAssistant={() => navigate("#/assistant")}
-        onToggleAiMode={toggleAiMode}
         t={t}
         // formatting props
         formatComposer={formatComposer}
