@@ -2,21 +2,12 @@ import React, { useEffect, useMemo, useRef, useState, useLayoutEffect, useCallba
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import i18nCore from "./i18n";
-import { askAI } from "./ai";
-import { marked as markedParser } from "marked";
-import DOMPurify from "dompurify";
+import { renderMarkdown } from "./markdown";
+import { useAssistantChat } from "./assistant/useAssistantChat";
+import { lastAssistantMessage, MessageStatus } from "./assistant/messages";
+import AssistantResponseCard from "./assistant/AssistantResponseCard";
+import { CloseIcon, Sparkles } from "./assistant/icons";
 import DrawingCanvas from "./DrawingCanvas";
-
-// Ensure we can call marked.parse(...)
-const marked =
-  typeof markedParser === "function" ? { parse: markedParser } : markedParser;
-
-// Sanitize rendered markdown before injecting it as HTML (prevents stored XSS)
-const renderMarkdown = (md) =>
-  DOMPurify.sanitize(marked.parse(md || ""), {
-    USE_PROFILES: { html: true },
-    ADD_DATA_URI_TAGS: ["img"],
-  });
 
 /** ---------- API Helpers ---------- */
 const API_BASE = "/api";
@@ -240,11 +231,6 @@ const GalleryIcon = () => (
     <circle cx="16" cy="16" r="1" fill="currentColor" />
   </svg>
 );
-const CloseIcon = () => (
-  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6l-12 12" />
-  </svg>
-);
 const DownloadIcon = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
     <path strokeLinecap="round" strokeLinejoin="round" d="M7 10l5 5m0 0l5-5m-5 5V3" />
@@ -327,16 +313,6 @@ const SunIcon = () => (
   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="5" />
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-  </svg>
-);
-
-const Sparkles = () => (
-  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-    <path d="M5 3v4" />
-    <path d="M19 17v4" />
-    <path d="M3 5h4" />
-    <path d="M17 19h4" />
   </svg>
 );
 
@@ -2929,47 +2905,18 @@ function NotesUI({
       </header>
 
       {/* AI Response Box */}
-      {localAiEnabled && (aiResponse || isAiLoading) && (
-        <div className="px-4 sm:px-6 md:px-8 lg:px-12 mb-6">
-          <div className="max-w-2xl mx-auto glass-card rounded-xl shadow-lg p-5 border border-indigo-500/30 relative overflow-hidden bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/30 dark:to-purple-950/30">
-            {isAiLoading && (
-              <div className="absolute top-0 left-0 h-1 bg-indigo-500 transition-all duration-300"
-                style={{ width: aiLoadingProgress ? `${aiLoadingProgress}%` : '5%' }}
-              />
-            )}
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="text-indigo-600 dark:text-indigo-400" />
-              <h3 className="font-semibold text-indigo-700 dark:text-indigo-300">{t('ai.assistant')}</h3>
-              {aiResponse && !isAiLoading && (
-                <button
-                  onClick={() => {
-                    setAiResponse(null);
-                    setSearch('');
-                    onClearAiHistory?.();
-                  }}
-                  className="ml-auto p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
-                  title={t('ai.clearResponse')}
-                >
-                  <CloseIcon />
-                </button>
-              )}
-            </div>
-            <div className="text-sm prose prose-sm dark:prose-invert max-w-none">
-              {isAiLoading ? (
-                <p className="animate-pulse text-gray-500 italic flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" />
-                  {t('ai.thinking')}
-                </p>
-              ) : (
-                <div
-                  className="text-gray-800 dark:text-gray-200 note-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(aiResponse) }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <AssistantResponseCard
+        visible={localAiEnabled && (aiResponse || isAiLoading)}
+        text={aiResponse}
+        isLoading={isAiLoading}
+        progress={aiLoadingProgress}
+        onClear={() => {
+          setAiResponse(null);
+          setSearch('');
+          onClearAiHistory?.();
+        }}
+        t={t}
+      />
 
       {/* Composer */}
       <div className="px-4 sm:px-6 md:px-8 lg:px-12">
@@ -3567,9 +3514,30 @@ export default function App() {
       return stored === null ? false : stored === "true";
     } catch (e) { return false; }
   });
-  const [aiResponse, setAiResponse] = useState(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiLoadingProgress, setAiLoadingProgress] = useState(null);
+  // Assistant conversation: typed message model + streaming transport.
+  // The hook keeps the session messages (user/assistant, tool calls, reasoning,
+  // errors) and persists the text-only context under the same key as before.
+  const logAssistantError = useCallback((err) => console.error("AI Error:", err), []);
+  const assistant = useAssistantChat({
+    userId: currentUser?.id,
+    onError: logAssistantError,
+  });
+  const lastAssistant = lastAssistantMessage(assistant.messages);
+  // Derive the values the current response card expects, preserving the prior
+  // behaviour: while streaming the card shows "thinking"; on error it shows the
+  // generic message; otherwise it shows the accumulated answer.
+  const aiResponse = lastAssistant
+    ? lastAssistant.status === MessageStatus.ERROR
+      ? t("ai.errorResponse")
+      : lastAssistant.content || null
+    : null;
+  const isAiLoading = assistant.isStreaming;
+  const aiLoadingProgress = assistant.progress;
+  // Alias kept so the existing card/props keep working; clears the visible
+  // response without touching the persisted context.
+  const setAiResponse = assistant.clearResponse;
+  const assistantSend = assistant.send;
+  const assistantClearAll = assistant.clearAll;
 
   // Assistant BYOK credentials (masked, server-side vault)
   const [assistantCreds, setAssistantCreds] = useState(null);
@@ -3715,22 +3683,8 @@ export default function App() {
     });
   };
 
-  // Session conversation history (per user, localStorage) so the assistant
-  // remembers what was asked earlier. Server-side persistent memory: Fase 9.
-  const aiHistoryKey = currentUser?.id ? `assistantHistory-${currentUser.id}` : null;
-  const [aiHistory, setAiHistory] = useState([]);
-  useEffect(() => {
-    if (!aiHistoryKey) {
-      setAiHistory([]);
-      return;
-    }
-    try {
-      const raw = localStorage.getItem(aiHistoryKey);
-      setAiHistory(raw ? JSON.parse(raw) : []);
-    } catch {
-      setAiHistory([]);
-    }
-  }, [aiHistoryKey]);
+  // Conversation history now lives in `useAssistantChat` (see above), which
+  // persists the same text-only context under `assistantHistory-<userId>`.
 
   // Composer
   const [composerType, setComposerType] = useState("text");
@@ -3924,7 +3878,7 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("localAiEnabled", String(localAiEnabled)); } catch (e) { }
     if (!localAiEnabled) setAiResponse(null);
-  }, [localAiEnabled]);
+  }, [localAiEnabled, setAiResponse]);
 
   // Window resize listener for responsive sidebar behavior
   useEffect(() => {
@@ -4292,39 +4246,10 @@ export default function App() {
 
 
   // Load notes
-  const handleAiSearch = async (question) => {
-    if (!question || !question.trim()) return;
-    setIsAiLoading(true);
-    setAiResponse(null);
-    setAiLoadingProgress(0);
 
-    try {
-      const history = aiHistory.slice(-20);
-      const answer = await askAI(question, notes, (progress) => {
-        if (progress.status === 'delta') {
-          setAiResponse(progress.text);
-        } else if (progress.status === 'ready') {
-          setAiLoadingProgress(100);
-        }
-      }, history);
-      const nextHistory = [
-        ...history,
-        { role: 'user', content: question },
-        { role: 'assistant', content: answer }
-      ].slice(-20);
-      setAiHistory(nextHistory);
-      if (aiHistoryKey) {
-        try { localStorage.setItem(aiHistoryKey, JSON.stringify(nextHistory)); } catch { /* ignore */ }
-      }
-      setAiResponse((prev) => answer || prev);
-    } catch (err) {
-      console.error("AI Error:", err);
-      setAiResponse(t('ai.errorResponse'));
-    } finally {
-      setIsAiLoading(false);
-      setAiLoadingProgress(null);
-    }
-  };
+  // NOTE: the assistant request handler (`handleAiSearch`) was replaced by
+  // `assistant.send` from `useAssistantChat`; streaming, history persistence and
+  // error handling now live in that hook.
 
   const loadNotes = async () => {
     if (!token) return;
@@ -7326,13 +7251,8 @@ export default function App() {
         setAiResponse={setAiResponse}
         isAiLoading={isAiLoading}
         aiLoadingProgress={aiLoadingProgress}
-        onAiSearch={handleAiSearch}
-        onClearAiHistory={() => {
-          setAiHistory([]);
-          if (aiHistoryKey) {
-            try { localStorage.setItem(aiHistoryKey, "[]"); } catch (e) { /* ignore */ }
-          }
-        }}
+        onAiSearch={assistantSend}
+        onClearAiHistory={assistantClearAll}
         assistantAvailable={assistantAvailable}
         onToggleAiMode={toggleAiMode}
         t={t}
