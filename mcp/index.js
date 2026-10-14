@@ -440,11 +440,11 @@ server.registerTool(
   "create_calendar_event",
   {
     title: "Crear evento en el calendario",
-    description: "Crea un evento en Google Calendar. Siempre confirmá con el usuario antes de usar esta herramienta, excepto para inicio/fin de jornada.",
+    description: "Crea un evento en Google Calendar. Siempre confirmá con el usuario antes de usar esta herramienta, excepto para inicio/fin de jornada. Para eventos de todo el día, usá solo la fecha (YYYY-MM-DD).",
     inputSchema: {
       summary: z.string().min(1).describe("Título del evento"),
-      start: z.string().describe("Fecha/hora de inicio en ISO 8601"),
-      end: z.string().optional().describe("Fecha/hora de fin en ISO 8601 (default +1 hora)"),
+      start: z.string().describe("Fecha/hora de inicio en ISO 8601 o solo fecha YYYY-MM-DD para todo el día"),
+      end: z.string().optional().describe("Fecha/hora de fin en ISO 8601 o solo fecha YYYY-MM-DD (default +1 hora o +1 día)"),
       description: z.string().optional().describe("Descripción opcional"),
     },
   },

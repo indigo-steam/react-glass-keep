@@ -2155,23 +2155,56 @@ app.get("/api/calendar/events", auth, async (req, res) => {
   }
 });
 
+function parseCalendarStart(start) {
+  if (!start) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    return { type: "date", value: start };
+  }
+  const d = new Date(start);
+  if (isNaN(d.getTime())) return null;
+  return { type: "dateTime", value: toBogotaISO(d) };
+}
+
+function buildCalendarEnd(startParsed, end) {
+  if (startParsed.type === "date") {
+    if (end && /^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      return { type: "date", value: end };
+    }
+    const next = new Date(`${startParsed.value}T00:00:00`);
+    next.setDate(next.getDate() + 1);
+    return { type: "date", value: next.toISOString().slice(0, 10) };
+  }
+  const d = end ? new Date(end) : new Date(new Date(startParsed.value).getTime() + 60 * 60 * 1000);
+  if (isNaN(d.getTime())) return null;
+  return { type: "dateTime", value: toBogotaISO(d) };
+}
+
+function buildCalendarEvent(summary, start, end, description) {
+  const startParsed = parseCalendarStart(start);
+  if (!startParsed) throw new Error("Invalid start date");
+  const endParsed = buildCalendarEnd(startParsed, end);
+  if (!endParsed) throw new Error("Invalid end date");
+  const event = {
+    summary,
+    description: description || "",
+  };
+  if (startParsed.type === "date") {
+    event.start = { date: startParsed.value };
+    event.end = { date: endParsed.value };
+  } else {
+    event.start = { dateTime: startParsed.value, timeZone: DEFAULT_TIMEZONE };
+    event.end = { dateTime: endParsed.value, timeZone: DEFAULT_TIMEZONE };
+  }
+  return event;
+}
+
 app.post("/api/calendar/events", auth, async (req, res) => {
   try {
     const { summary, start, end, description } = req.body || {};
     if (!summary || !start) {
       return res.status(400).json({ error: "summary and start are required" });
     }
-    const startDate = new Date(start);
-    if (isNaN(startDate.getTime())) {
-      return res.status(400).json({ error: "Invalid start date" });
-    }
-    const endDate = end ? new Date(end) : new Date(startDate.getTime() + 60 * 60 * 1000);
-    const event = {
-      summary,
-      description: description || "",
-      start: { dateTime: toBogotaISO(startDate), timeZone: DEFAULT_TIMEZONE },
-      end: { dateTime: toBogotaISO(endDate), timeZone: DEFAULT_TIMEZONE },
-    };
+    const event = buildCalendarEvent(summary, start, end, description);
     const data = await googleCalendarFetch(req.user.id, "/calendars/primary/events", {
       method: "POST",
       body: JSON.stringify(event),
