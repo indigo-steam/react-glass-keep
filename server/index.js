@@ -2184,11 +2184,18 @@ function buildCalendarEvent(summary, start, end, description) {
   if (!startParsed) throw new Error("Invalid start date");
   const endParsed = buildCalendarEnd(startParsed, end);
   if (!endParsed) throw new Error("Invalid end date");
+  const isAllDay = startParsed.type === "date";
   const event = {
     summary,
     description: description || "",
+    reminders: {
+      useDefault: false,
+      overrides: [
+        { method: "popup", minutes: isAllDay ? 24 * 60 : 60 },
+      ],
+    },
   };
-  if (startParsed.type === "date") {
+  if (isAllDay) {
     event.start = { date: startParsed.value };
     event.end = { date: endParsed.value };
   } else {
