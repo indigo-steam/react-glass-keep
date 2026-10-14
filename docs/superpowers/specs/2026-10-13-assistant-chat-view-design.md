@@ -46,6 +46,9 @@ búsqueda**.
 4. **Historial al recargar**: se **hidrata** desde `localStorage` (texto). Se mantiene la
    misma clave y formato. Tools/reasoning no persisten entre sesiones.
 5. **Sugerencias**: chips en el estado vacío que envían la pregunta.
+6. **Toggle "IA local" de Ajustes**: se **elimina** (junto con `localAiEnabled`,
+   `setLocalAiEnabled`, `localAiHidden` y su efecto). La IA está disponible cuando el
+   asistente está configurado (`assistantAvailable`); el acceso es el menú → `#/assistant`.
 
 ## 5. Arquitectura
 
