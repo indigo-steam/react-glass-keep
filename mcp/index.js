@@ -419,10 +419,10 @@ server.registerTool(
   "list_calendar_events",
   {
     title: "Listar eventos del calendario",
-    description: "Lista eventos de Google Calendar del usuario en un rango de fechas.",
+    description: "Lista eventos de Google Calendar del usuario en un rango de fechas. Usá formato ISO 8601 con zona horaria (ej: 2028-03-15T00:00:00-05:00).",
     inputSchema: {
-      start: z.string().optional().describe("Inicio del rango en ISO 8601 (default hoy 00:00)"),
-      end: z.string().optional().describe("Fin del rango en ISO 8601 (default hoy 23:59)"),
+      start: z.string().optional().describe("Inicio del rango en ISO 8601 con zona horaria, ej: 2026-01-01T00:00:00-05:00 (default hoy 00:00)"),
+      end: z.string().optional().describe("Fin del rango en ISO 8601 con zona horaria, ej: 2026-12-31T23:59:59-05:00 (default hoy 23:59)"),
       max_results: z.number().int().min(1).max(250).optional().describe("Máximo de resultados (default 50)"),
     },
   },

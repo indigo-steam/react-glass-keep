@@ -2044,7 +2044,6 @@ app.get("/api/calendar/status", auth, (req, res) => {
 });
 
 app.get("/api/calendar/auth-url", auth, (req, res) => {
-  console.log(`[calendar auth-url] requested by user=${req.user.id}`);
   if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
     console.error("[calendar auth-url] missing env vars");
     return res.status(503).json({ error: "Google OAuth not configured on server." });
@@ -2065,7 +2064,6 @@ app.get("/api/calendar/auth-url", auth, (req, res) => {
 });
 
 app.get("/api/calendar/callback", async (req, res) => {
-  console.log("[calendar callback] hit:", req.url);
   const { code, state } = req.query;
   if (!code || !state) {
     console.error("[calendar callback] missing code or state");
@@ -2080,9 +2078,7 @@ app.get("/api/calendar/callback", async (req, res) => {
     return res.status(503).send("Google OAuth not configured.");
   }
   try {
-    console.log(`[calendar callback] user=${payload.uid} code received, exchanging...`);
     const tokenData = await exchangeGoogleCode(code);
-    console.log(`[calendar callback] token response keys:`, Object.keys(tokenData).join(","));
     if (!tokenData.refresh_token) {
       console.error("[calendar callback] missing refresh_token");
       return res.status(400).send("Google did not return a refresh token. Please revoke access and try again.");
@@ -2096,7 +2092,6 @@ app.get("/api/calendar/callback", async (req, res) => {
       updated_at: nowISO(),
       user_id: payload.uid,
     });
-    console.log(`[calendar callback] tokens saved for user=${payload.uid}`);
     const redirectBase = GOOGLE_REDIRECT_URI.replace("/api/calendar/callback", "");
     res.redirect(`${redirectBase}/#/settings?calendar=connected`);
   } catch (err) {
@@ -2125,10 +2120,24 @@ app.post("/api/calendar/disconnect", auth, async (req, res) => {
 });
 
 // ---------- Calendar REST endpoints ----------
+function normalizeCalendarRangeParam(value, endOfDay) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const v = value.trim();
+  // "YYYY-MM-DD" → RFC3339 en hora de Bogotá
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return `${v}T${endOfDay ? "23:59:59" : "00:00:00"}-05:00`;
+  }
+  // ISO sin zona horaria → agregar offset de Bogotá
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(v)) {
+    return `${v.length === 16 ? `${v}:00` : v}-05:00`;
+  }
+  return v;
+}
+
 app.get("/api/calendar/events", auth, async (req, res) => {
   try {
-    const timeMin = req.query.timeMin || startOfDayInBogota();
-    const timeMax = req.query.timeMax || endOfDayInBogota();
+    const timeMin = normalizeCalendarRangeParam(req.query.timeMin, false) || startOfDayInBogota();
+    const timeMax = normalizeCalendarRangeParam(req.query.timeMax, true) || endOfDayInBogota();
     const maxResults = Math.min(250, Math.max(1, Number(req.query.maxResults) || 50));
     const data = await googleCalendarFetch(
       req.user.id,
