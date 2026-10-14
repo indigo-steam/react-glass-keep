@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import i18nCore from "./i18n";
 import { renderMarkdown } from "./markdown";
+import AssistantView from "./assistant/AssistantView";
 import { useAssistantChat } from "./assistant/useAssistantChat";
 import { lastAssistantMessage, MessageStatus } from "./assistant/messages";
 import AssistantResponseCard from "./assistant/AssistantResponseCard";
@@ -2554,7 +2555,7 @@ function NotesUI({
   // Settings panel
   openSettingsPanel,
   // AI props
-  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, onClearAiHistory, assistantAvailable, onToggleAiMode, t
+  localAiEnabled, aiResponse, setAiResponse, isAiLoading, aiLoadingProgress, onAiSearch, onClearAiHistory, assistantAvailable, onOpenAssistant, onToggleAiMode, t
 }) {
   // Multi-select color popover (local UI state)
   const multiColorBtnRef = useRef(null);
@@ -2780,6 +2781,15 @@ function NotesUI({
                 onClick={(e) => e.stopPropagation()}
               >
 
+                {assistantAvailable && (
+                  <button
+                    className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
+                    onClick={() => { setHeaderMenuOpen(false); onOpenAssistant?.(); }}
+                  >
+                    <Sparkles />
+                    {t('menu.assistant')}
+                  </button>
+                )}
                 <button
                   className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm ${dark ? "hover:bg-white/10" : "hover:bg-gray-100"}`}
                   onClick={() => { setHeaderMenuOpen(false); openSettingsPanel?.(); }}
@@ -7040,7 +7050,7 @@ export default function App() {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (currentUser?.email && route !== "#/notes" && route !== "#/admin") navigate("#/notes");
+    if (currentUser?.email && route !== "#/notes" && route !== "#/admin" && route !== "#/assistant") navigate("#/notes");
   }, [currentUser]); // eslint-disable-line
 
   // Close sidebar when navigating away or opening modal
@@ -7120,6 +7130,18 @@ export default function App() {
         goRegister={() => navigate("#/register")}
         goSecret={() => navigate("#/login-secret")}
         allowRegistration={allowRegistration}
+        t={t}
+      />
+    );
+  }
+
+  if (route === "#/assistant") {
+    return (
+      <AssistantView
+        userId={currentUser?.id}
+        onBack={() => navigate("#/notes")}
+        onOpenSettings={() => setSettingsPanelOpen(true)}
+        assistantAvailable={assistantAvailable}
         t={t}
       />
     );
@@ -7254,6 +7276,7 @@ export default function App() {
         onAiSearch={assistantSend}
         onClearAiHistory={assistantClearAll}
         assistantAvailable={assistantAvailable}
+        onOpenAssistant={() => navigate("#/assistant")}
         onToggleAiMode={toggleAiMode}
         t={t}
         // formatting props
