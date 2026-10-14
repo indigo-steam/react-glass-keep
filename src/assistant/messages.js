@@ -113,3 +113,23 @@ export function lastAssistantMessage(messages) {
   }
   return null;
 }
+
+/**
+ * Rebuild a visible message list from the persisted text-only history
+ * (`[{ role:'user'|'assistant', content }]`). Pure: no storage access here.
+ */
+export function historyToMessages(history) {
+  const list = Array.isArray(history) ? history : [];
+  return list
+    .filter(
+      (t) =>
+        t &&
+        (t.role === "user" || t.role === "assistant") &&
+        typeof t.content === "string"
+    )
+    .map((t) =>
+      t.role === "user"
+        ? createUserMessage(t.content)
+        : { ...createAssistantMessage(), content: t.content, status: MessageStatus.DONE }
+    );
+}
