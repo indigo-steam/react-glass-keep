@@ -2192,7 +2192,7 @@ function buildCalendarEvent(summary, start, end, description) {
     reminders: {
       useDefault: false,
       overrides: [
-        { method: "popup", minutes: isAllDay ? 24 * 60 : 60 },
+        { method: "popup", minutes: isAllDay ? 900 : 60 },
       ],
     },
   };
@@ -2369,6 +2369,7 @@ app.patch("/api/calendar/events/:id", auth, async (req, res) => {
       );
       payload.start = event.start;
       payload.end = event.end;
+      payload.reminders = event.reminders;
       if (summary === undefined) delete payload.summary;
       if (description === undefined) delete payload.description;
     }
@@ -2384,6 +2385,7 @@ app.patch("/api/calendar/events/:id", auth, async (req, res) => {
       summary: data.summary,
       start: data.start,
       end: data.end,
+      reminders: data.reminders,
     });
   } catch (err) {
     console.error("patch event error:", err.message);
