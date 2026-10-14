@@ -1675,10 +1675,7 @@ const ASSISTANT_MAX_CHARS = 40000;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "";
-const GOOGLE_CALENDAR_SCOPE = [
-  "https://www.googleapis.com/auth/calendar.events",
-  "https://www.googleapis.com/auth/userinfo.email",
-].join(" ");
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const GOOGLE_OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_API_URL = "https://www.googleapis.com/calendar/v3";
@@ -2089,15 +2086,12 @@ app.get("/api/calendar/callback", async (req, res) => {
       console.error("[calendar callback] missing refresh_token");
       return res.status(400).send("Google did not return a refresh token. Please revoke access and try again.");
     }
-    const accessToken = tokenData.access_token;
-    const userInfo = await fetchGoogleUserInfo(accessToken);
-    console.log(`[calendar callback] userinfo email:`, userInfo.email);
     setGoogleTokens.run({
       refresh_enc: encryptSecret(tokenData.refresh_token),
-      access_enc: encryptSecret(accessToken),
+      access_enc: encryptSecret(tokenData.access_token),
       expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
       connected: 1,
-      email: userInfo.email || null,
+      email: null,
       updated_at: nowISO(),
       user_id: payload.uid,
     });
