@@ -173,6 +173,19 @@ export class GlassKeepClient {
     });
   }
 
+  async updateCalendarEvent({ id, summary, start, end, description }) {
+    return this.#request(`/api/calendar/events/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: { summary, start, end, description },
+    });
+  }
+
+  async deleteCalendarEvent(id) {
+    return this.#request(`/api/calendar/events/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+
   async getWorkdayStatus() {
     return this.#request("/api/calendar/workday");
   }

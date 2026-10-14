@@ -459,6 +459,48 @@ server.registerTool(
 );
 
 server.registerTool(
+  "update_calendar_event",
+  {
+    title: "Actualizar evento del calendario",
+    description: "Modifica un evento existente de Google Calendar. Solo enviá los campos que querés cambiar.",
+    inputSchema: {
+      id: z.string().describe("ID del evento en Google Calendar"),
+      summary: z.string().optional().describe("Nuevo título"),
+      start: z.string().optional().describe("Nueva fecha/hora de inicio (ISO 8601 o YYYY-MM-DD)"),
+      end: z.string().optional().describe("Nueva fecha/hora de fin (ISO 8601 o YYYY-MM-DD)"),
+      description: z.string().optional().describe("Nueva descripción"),
+    },
+  },
+  async ({ id, summary, start, end, description }) => {
+    try {
+      const updated = await client.updateCalendarEvent({ id, summary, start, end, description });
+      return textResult(updated);
+    } catch (err) {
+      return errorResult(`Error actualizando evento: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "delete_calendar_event",
+  {
+    title: "Eliminar evento del calendario",
+    description: "Elimina un evento de Google Calendar por su ID. Usá esta herramienta con cuidado.",
+    inputSchema: {
+      id: z.string().describe("ID del evento en Google Calendar"),
+    },
+  },
+  async ({ id }) => {
+    try {
+      const result = await client.deleteCalendarEvent(id);
+      return textResult(result);
+    } catch (err) {
+      return errorResult(`Error eliminando evento: ${err.message}`);
+    }
+  }
+);
+
+server.registerTool(
   "start_workday",
   {
     title: "Iniciar jornada laboral",

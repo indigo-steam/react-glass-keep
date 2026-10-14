@@ -2348,19 +2348,28 @@ app.post("/api/calendar/workday/end", auth, async (req, res) => {
 app.patch("/api/calendar/events/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { end } = req.body || {};
-    if (!end) {
-      return res.status(400).json({ error: "end is required" });
+    const { summary, start, end, description } = req.body || {};
+    const payload = {};
+    if (summary !== undefined) payload.summary = summary;
+    if (description !== undefined) payload.description = description;
+    if (start !== undefined || end !== undefined) {
+      const event = buildCalendarEvent(
+        summary || "(sin título)",
+        start || new Date().toISOString(),
+        end,
+        description || ""
+      );
+      payload.start = event.start;
+      payload.end = event.end;
+      if (summary === undefined) delete payload.summary;
+      if (description === undefined) delete payload.description;
     }
-    const endDate = new Date(end);
-    if (isNaN(endDate.getTime())) {
-      return res.status(400).json({ error: "Invalid end date" });
+    if (Object.keys(payload).length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
     }
     const data = await googleCalendarFetch(req.user.id, `/calendars/primary/events/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      body: JSON.stringify({
-        end: { dateTime: toBogotaISO(endDate), timeZone: DEFAULT_TIMEZONE },
-      }),
+      body: JSON.stringify(payload),
     });
     res.json({
       id: data.id,
@@ -2370,6 +2379,19 @@ app.patch("/api/calendar/events/:id", auth, async (req, res) => {
     });
   } catch (err) {
     console.error("patch event error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.delete("/api/calendar/events/:id", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await googleCalendarFetch(req.user.id, `/calendars/primary/events/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    res.json({ deleted: true, id });
+  } catch (err) {
+    console.error("delete event error:", err.message);
     res.status(502).json({ error: err.message });
   }
 });
