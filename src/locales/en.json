@@ -78,6 +78,7 @@
     "googleCalendar": "Google Calendar",
     "googleCalendarDesc": "Connect your calendar so the assistant can log workdays and events.",
     "googleCalendarConnected": "Connected as {{email}}",
+    "googleCalendarConnectedNoEmail": "Connected",
     "googleCalendarNotConnected": "Not connected",
     "googleCalendarConnect": "Connect Google Calendar",
     "googleCalendarDisconnect": "Disconnect",

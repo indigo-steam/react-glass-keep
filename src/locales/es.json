@@ -78,6 +78,7 @@
     "googleCalendar": "Google Calendar",
     "googleCalendarDesc": "Conectá tu calendario para que el asistente registre jornadas y eventos.",
     "googleCalendarConnected": "Conectado como {{email}}",
+    "googleCalendarConnectedNoEmail": "Conectado",
     "googleCalendarNotConnected": "No conectado",
     "googleCalendarConnect": "Conectar Google Calendar",
     "googleCalendarDisconnect": "Desconectar",

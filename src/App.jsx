@@ -2089,7 +2089,9 @@ function SettingsPanel({ open, onClose, dark, onExportAll, onImportAll, onImport
                     <div className="font-medium">{t('settings.googleCalendar')}</div>
                     <div className="text-sm text-gray-500">
                       {calendarStatus?.connected
-                        ? t('settings.googleCalendarConnected', { email: calendarStatus.email })
+                        ? (calendarStatus.email
+                            ? t('settings.googleCalendarConnected', { email: calendarStatus.email })
+                            : t('settings.googleCalendarConnectedNoEmail'))
                         : t('settings.googleCalendarNotConnected')}
                     </div>
                   </div>
